@@ -2,7 +2,7 @@
 
 Mesh*	g_mesh = 0;
 float	g_angle = 0.0f;
-Mesh*	g_skyscraper = 0;
+Mesh*	g_unitBox = 0;
 
 struct CameraInfo
 {
@@ -92,7 +92,7 @@ void OnInit()
 {
 	// NOTE: there is also unitbox.x, unitsphere.x & unitcylinder.x to use.
 	g_mesh = Mesh::LoadFromFile( "resources/meshes/unitcylinder.x" );
-	g_skyscraper = Mesh::LoadFromFile("resources/meshes/unitbox.x");
+	g_unitBox = Mesh::LoadFromFile("resources/meshes/unitbox.x");
 }
 
 //----------------------------------------------------------------------------
@@ -116,7 +116,8 @@ void OnRender()
 	D3DXVECTOR4 color( 1.0f, 0.5f, 0.0f, 1.0f );
 	g_mesh->Render( pos, rot, sca, color );
 
-	g_mesh->Render(pos + D3DXVECTOR3(1.0, 1.0f, 0.0f), rot, sca, color);
+	// Render ground
+	g_unitBox->Render(D3DXVECTOR3(0.0f, 0.0f, 0.0f), rot, D3DXVECTOR3(50.0f, 0.1f, 50.0f), D3DXVECTOR4 (0.0f, 0.5f, 0.7f, 1.0f));
 }
 
 void UpdateCamera(float _deltaTime)
