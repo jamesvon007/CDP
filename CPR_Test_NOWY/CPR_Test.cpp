@@ -1,8 +1,13 @@
 #include "CPR_Framework.h"
+#include <vector>
+#include <iostream>
+#include <string>
 
 Mesh*	g_mesh = 0;
 float	g_angle = 0.0f;
 Mesh*	g_unitBox = 0;
+
+std::vector<float> g_skycrapers;
 
 struct CameraInfo
 {
@@ -93,6 +98,32 @@ void OnInit()
 	// NOTE: there is also unitbox.x, unitsphere.x & unitcylinder.x to use.
 	g_mesh = Mesh::LoadFromFile( "resources/meshes/unitcylinder.x" );
 	g_unitBox = Mesh::LoadFromFile("resources/meshes/unitbox.x");
+
+	std::string line;
+	std::fstream city("Resources\\city.txt", std::fstream::in);
+	if (city.is_open())
+	{
+		while (city.good())
+		{
+			std::getline(city, line);
+			int first, last = 0;
+			for (std::string::iterator it = line.begin(); it != line.end(); ++it)
+			{
+				if (*it == '\/')
+				{
+					break;
+				}
+				else if (*it == ' ' || *it == '\,' || *it == '\;')
+				{
+					g_skycrapers.push_back(std::stof(line.substr(first, last-first)));
+					first = last + 1;
+				}
+				++last;
+			}
+		}
+	}
+
+	city.close();
 }
 
 //----------------------------------------------------------------------------
