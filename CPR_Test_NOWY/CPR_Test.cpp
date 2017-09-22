@@ -1,11 +1,17 @@
 #include "CPR_Framework.h"
 #include <vector>
-#include <iostream>
+#include <fstream>
 #include <string>
+#include <ctype.h>
+
+static const float EPSILON = 0.000001f;
+bool IsLesserOrEqualWithEpsilon(float x, float y) { return ((x)-(y) < EPSILON); }
+float PlacePosY(float height) { return height / 2.f + 0.1f; }
 
 Mesh*	g_mesh = 0;
 float	g_angle = 0.0f;
 Mesh*	g_unitBox = 0;
+
 
 std::vector<float> g_skycrapers;
 
@@ -24,6 +30,11 @@ struct CameraInfo
 	void Walk(float d)
 	{
 		mPosition += d*mLook;
+	}
+
+	void Rise(float d)
+	{
+		mPosition += d*mUp;
 	}
 
 	void Strafe(float d)
@@ -60,6 +71,8 @@ struct CameraInfo
 CameraInfo g_camera;
 
 void UpdateCamera(float _deltaTime);
+void ReadData();
+void RenderSkycrapers();
 
 
 /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -96,34 +109,10 @@ void UpdateCamera(float _deltaTime);
 void OnInit()
 {
 	// NOTE: there is also unitbox.x, unitsphere.x & unitcylinder.x to use.
-	g_mesh = Mesh::LoadFromFile( "resources/meshes/unitcylinder.x" );
+	g_mesh = Mesh::LoadFromFile( "resources/meshes/unitbox.x" );
 	g_unitBox = Mesh::LoadFromFile("resources/meshes/unitbox.x");
 
-	std::string line;
-	std::fstream city("Resources\\city.txt", std::fstream::in);
-	if (city.is_open())
-	{
-		while (city.good())
-		{
-			std::getline(city, line);
-			int first, last = 0;
-			for (std::string::iterator it = line.begin(); it != line.end(); ++it)
-			{
-				if (*it == '\/')
-				{
-					break;
-				}
-				else if (*it == ' ' || *it == '\,' || *it == '\;')
-				{
-					g_skycrapers.push_back(std::stof(line.substr(first, last-first)));
-					first = last + 1;
-				}
-				++last;
-			}
-		}
-	}
-
-	city.close();
+	ReadData();
 }
 
 //----------------------------------------------------------------------------
@@ -141,11 +130,9 @@ void OnUpdate( float _deltaTime )
 void OnRender()
 {
 	// render mesh
-	D3DXVECTOR3 pos( 0.0f, 0.0f, 0.0f );
-	D3DXVECTOR3 rot( 0.0f, 0.0f, 0.0f );
-	D3DXVECTOR3 sca( 1.0f, 1.0f, 1.0f );
-	D3DXVECTOR4 color( 1.0f, 0.5f, 0.0f, 1.0f );
-	g_mesh->Render( pos, rot, sca, color );
+	D3DXVECTOR3 rot(0.0f, 0.0f, 0.0f);
+
+	RenderSkycrapers();
 
 	// Render ground
 	g_unitBox->Render(D3DXVECTOR3(0.0f, 0.0f, 0.0f), rot, D3DXVECTOR3(50.0f, 0.1f, 50.0f), D3DXVECTOR4 (0.0f, 0.5f, 0.7f, 1.0f));
@@ -169,6 +156,14 @@ void UpdateCamera(float _deltaTime)
 	{
 		g_camera.Strafe(10.f * _deltaTime);
 	}
+	else if (Keyboard::IsKeyPressed(Keyboard::KEY_UP))
+	{
+		g_camera.Rise(10.f * _deltaTime);
+	}
+	else if (Keyboard::IsKeyPressed(Keyboard::KEY_DOWN))
+	{
+		g_camera.Rise(-10.f * _deltaTime);
+	}
 
 	D3DXVECTOR2 newPos = Mouse::GetPosition();
 	float dx = D3DXToRadian(0.1f*(newPos.x - g_camera.mLastMousePos.x));
@@ -185,4 +180,76 @@ void UpdateCamera(float _deltaTime)
 	// update camera
 	g_angle += _deltaTime;
 	Camera::LookAt(g_camera.mPosition, g_camera.mPosition + 10.f * g_camera.mLook);
+}
+
+void RenderSkycrapers()
+{
+	float width = 4.f;
+	D3DXVECTOR4 color(1.0f, 0.5f, 0.0f, 1.0f);
+	D3DXVECTOR3 rot(0.0f, 0.0f, 0.0f);
+	int rowColMax = static_cast<int>((sqrt(g_skycrapers.size())));
+	int row = 0;
+	int col = 0;
+
+	for (std::vector<float>::iterator it = g_skycrapers.begin(); it != g_skycrapers.end(); ++it)
+	{
+		float height = *it;
+
+		g_unitBox->Render(D3DXVECTOR3(5.0f * (col - rowColMax/2), PlacePosY(height), 5.0f * (row - rowColMax/2)),
+			rot, D3DXVECTOR3(width, height, width), color);
+		if (col++ == rowColMax)
+		{
+			col = 0;
+			row++;
+		}
+	}
+}
+
+void ReadData()
+{
+	std::string line;
+	std::fstream city("Resources\\city.txt", std::fstream::in);
+	if (city.is_open())
+	{
+		while (city.good())
+		{
+			std::getline(city, line);
+			int first = 0;
+			int last = 0;
+			for (std::string::iterator it = line.begin(); it != line.end(); ++it)
+			{
+				if (*it == '/')
+				{
+					break;
+				}
+
+				if (!isdigit(line.at(first)))
+				{
+					++first;
+				}
+				else if (*it == ' ' || *it == ',' || *it == ';')
+				{
+					float height = std::stof(line.substr(first, last - first));
+					if (!IsLesserOrEqualWithEpsilon(height, 0.f))
+					{
+						g_skycrapers.push_back(height);
+					}
+					first = last + 1;
+				}
+				++last;
+			}
+
+			//take care the edge case: last number
+			if (!line.empty() && line.at(first) && last - first > 0)
+			{
+				float height = std::stof(line.substr(first, last - first));
+				if (!IsLesserOrEqualWithEpsilon(height, 0.f))
+				{
+					g_skycrapers.push_back(height);
+				}
+			}
+		}
+
+		city.close();
+	}
 }
