@@ -3,12 +3,14 @@
 #include <fstream>
 #include <string>
 #include <ctype.h>
+#include <chrono>
+#include <iostream>
 
 static const float EPSILON = 0.000001f;
 bool IsLesserOrEqualWithEpsilon(float x, float y) { return ((x)-(y) < EPSILON); }
 float PlacePosY(float height) { return height / 2.f + 0.1f; }
 
-Mesh*	g_mesh = 0;
+Mesh*	g_sphere = 0;
 float	g_angle = 0.0f;
 Mesh*	g_unitBox = 0;
 
@@ -73,6 +75,8 @@ CameraInfo g_camera;
 void UpdateCamera(float _deltaTime);
 void ReadData();
 void RenderSkycrapers();
+void CalculateFrameStats();
+void RenderUI();
 
 
 /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -109,7 +113,7 @@ void RenderSkycrapers();
 void OnInit()
 {
 	// NOTE: there is also unitbox.x, unitsphere.x & unitcylinder.x to use.
-	g_mesh = Mesh::LoadFromFile( "resources/meshes/unitbox.x" );
+	g_sphere = Mesh::LoadFromFile( "resources/meshes/unitsphere.x" );
 	g_unitBox = Mesh::LoadFromFile("resources/meshes/unitbox.x");
 
 	ReadData();
@@ -124,6 +128,7 @@ void OnShutdown()
 void OnUpdate( float _deltaTime )
 {
 	UpdateCamera(_deltaTime);
+	CalculateFrameStats();
 }
 
 //----------------------------------------------------------------------------
@@ -133,6 +138,7 @@ void OnRender()
 	D3DXVECTOR3 rot(0.0f, 0.0f, 0.0f);
 
 	RenderSkycrapers();
+	RenderUI();
 
 	// Render ground
 	g_unitBox->Render(D3DXVECTOR3(0.0f, 0.0f, 0.0f), rot, D3DXVECTOR3(50.0f, 0.1f, 50.0f), D3DXVECTOR4 (0.0f, 0.5f, 0.7f, 1.0f));
@@ -182,6 +188,16 @@ void UpdateCamera(float _deltaTime)
 	Camera::LookAt(g_camera.mPosition, g_camera.mPosition + 10.f * g_camera.mLook);
 }
 
+void RenderUI()
+{
+	D3DXVECTOR4 color(1.0f, 0.0f, 0.0f, 1.0f);
+	D3DXVECTOR3 rot(0.0f, 0.0f, 0.0f);
+
+	D3DXVECTOR3 trans = g_camera.mPosition + 0.2f * g_camera.mLook;
+
+	g_sphere->Render(trans, rot, D3DXVECTOR3(0.001f, 0.001f, 0.001f), color);
+}
+
 void RenderSkycrapers()
 {
 	float width = 4.f;
@@ -195,7 +211,7 @@ void RenderSkycrapers()
 	{
 		float height = *it;
 
-		g_unitBox->Render(D3DXVECTOR3(5.0f * (col - rowColMax/2), PlacePosY(height), 5.0f * (row - rowColMax/2)),
+		g_unitBox->Render(D3DXVECTOR3(7.0f * (col - rowColMax/2), PlacePosY(height), 7.0f * (row - rowColMax/2)),
 			rot, D3DXVECTOR3(width, height, width), color);
 		if (col++ == rowColMax)
 		{
@@ -252,4 +268,27 @@ void ReadData()
 
 		city.close();
 	}
+}
+
+void CalculateFrameStats()
+{
+	static int frameCnt = 0;
+	static std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+	static std::chrono::steady_clock::time_point end = start;
+
+	frameCnt++;
+
+	std::chrono::milliseconds diff = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+	if (diff.count() >= 1000)
+	{
+		float fps = (float)frameCnt; // fps = frameCnt / 1
+		
+		std::cout << "FPS: " << fps << std::endl;
+
+		// Reset for next average.
+		frameCnt = 0;
+		start = std::chrono::steady_clock::now();
+	}
+
+	end = std::chrono::steady_clock::now();
 }
