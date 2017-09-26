@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <chrono>
 #include <iostream>
+#include "CrowdManager.h"
 
 static const float EPSILON = 0.000001f;
 bool IsLesserOrEqualWithEpsilon(float x, float y) { return ((x)-(y) < EPSILON); }
@@ -13,6 +14,7 @@ float PlacePosY(float height) { return height / 2.f + 0.1f; }
 Mesh*	g_sphere = 0;
 float	g_angle = 0.0f;
 Mesh*	g_unitBox = 0;
+CCrowdManager gCrowdManager;
 
 
 std::vector<float> g_skycrapers;
@@ -20,7 +22,7 @@ std::vector<float> g_skycrapers;
 struct CameraInfo
 {
 	CameraInfo()
-		: mPosition(0.0f, 0.0f, 0.0f),
+		: mPosition(0.0f, 5.0f, 0.0f),
 		mRight(1.0f, 0.0f, 0.0f),
 		mUp(0.0f, 1.0f, 0.0f),
 		mLook(0.0f, 0.0f, 1.0f),
@@ -77,6 +79,7 @@ void ReadData();
 void RenderSkycrapers();
 void CalculateFrameStats();
 void RenderUI();
+void RenderBalls();
 
 
 /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -129,6 +132,8 @@ void OnUpdate( float _deltaTime )
 {
 	UpdateCamera(_deltaTime);
 	CalculateFrameStats();
+
+	gCrowdManager.update(_deltaTime);
 }
 
 //----------------------------------------------------------------------------
@@ -137,8 +142,9 @@ void OnRender()
 	// render mesh
 	D3DXVECTOR3 rot(0.0f, 0.0f, 0.0f);
 
-	RenderSkycrapers();
+	//RenderSkycrapers();
 	RenderUI();
+	RenderBalls();
 
 	// Render ground
 	g_unitBox->Render(D3DXVECTOR3(0.0f, 0.0f, 0.0f), rot, D3DXVECTOR3(50.0f, 0.1f, 50.0f), D3DXVECTOR4 (0.0f, 0.5f, 0.7f, 1.0f));
@@ -196,6 +202,18 @@ void RenderUI()
 	D3DXVECTOR3 trans = g_camera.mPosition + 0.2f * g_camera.mLook;
 
 	g_sphere->Render(trans, rot, D3DXVECTOR3(0.001f, 0.001f, 0.001f), color);
+}
+
+void RenderBalls()
+{
+	D3DXVECTOR4 color(1.0f, 1.0f, 0.0f, 1.0f);
+
+	for (unsigned i = 0; i < BOIDS; i++) 
+	{
+		Kinematic agent = gCrowdManager.getKinematic()[i];
+		g_sphere->Render(D3DXVECTOR3(agent.position.x, agent.position.y, agent.position.z),
+			D3DXVECTOR3(0.f, agent.orientation, 0.f), D3DXVECTOR3(0.5f, 0.5f, 0.5f), color);
+	}
 }
 
 void RenderSkycrapers()
