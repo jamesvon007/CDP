@@ -7,15 +7,19 @@
 #include <iostream>
 #include "CrowdManager.h"
 
-static const float EPSILON = 0.000001f;
-bool IsLesserOrEqualWithEpsilon(float x, float y) { return ((x)-(y) < EPSILON); }
+
 float PlacePosY(float height) { return height / 2.f + 0.1f; }
 
 Mesh*	g_sphere = 0;
 float	g_angle = 0.0f;
 Mesh*	g_unitBox = 0;
-CCrowdManager gCrowdManager;
+CCrowdManager* g_crowdManager;
+Sphere *g_obstacles;
 
+bool g_pause = true;
+
+extern DebugPoint g_pointToAvoid;
+extern bool IsLesserOrEqualWithEpsilon(float x, float y);
 
 std::vector<float> g_skycrapers;
 
@@ -120,11 +124,30 @@ void OnInit()
 	g_unitBox = Mesh::LoadFromFile("resources/meshes/unitbox.x");
 
 	ReadData();
+
+	g_obstacles = new Sphere[OBSTACLES];
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 5; j++)
+		{
+			g_obstacles[5*i+j].position.x = -WORLD_SIZE + 9 * i;
+			g_obstacles[5 * i + j].position.y = 0.5f;
+			g_obstacles[5 * i + j].position.z = -WORLD_SIZE + 9 * j;
+			g_obstacles[5 * i + j].radius = 1.f;
+		}
+		
+	}
+
+	g_crowdManager = new CCrowdManager(g_obstacles);
 }
 
 //----------------------------------------------------------------------------
 void OnShutdown()
 {
+	delete g_crowdManager;
+	g_crowdManager = nullptr;
+	delete[] g_obstacles;
+	g_obstacles = nullptr;
 }
 
 //----------------------------------------------------------------------------
@@ -133,7 +156,16 @@ void OnUpdate( float _deltaTime )
 	UpdateCamera(_deltaTime);
 	CalculateFrameStats();
 
-	gCrowdManager.update(_deltaTime);
+	if (Keyboard::IsKeyPressed(Keyboard::KEY_SPACE))
+	{
+		g_pause = !g_pause;
+	}
+
+	if (!g_pause)
+	{
+		g_crowdManager->update(_deltaTime);
+	}
+	
 }
 
 //----------------------------------------------------------------------------
@@ -145,6 +177,15 @@ void OnRender()
 	//RenderSkycrapers();
 	RenderUI();
 	RenderBalls();
+
+	for (unsigned i = 0; i < OBSTACLES; i++)
+	{
+		g_sphere->Render(D3DXVECTOR3(g_obstacles[i].position.x, g_obstacles[i].position.y, g_obstacles[i].position.z), rot,
+			D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(1.0f, 0.f, 0.f, 1.0f));
+	}
+	
+	//g_sphere->Render(g_pointToAvoid.pos, rot, D3DXVECTOR3(0.5f, 0.5f, 0.5f), g_pointToAvoid.color);
+	
 
 	// Render ground
 	g_unitBox->Render(D3DXVECTOR3(0.0f, 0.0f, 0.0f), rot, D3DXVECTOR3(50.0f, 0.1f, 50.0f), D3DXVECTOR4 (0.0f, 0.5f, 0.7f, 1.0f));
@@ -210,7 +251,7 @@ void RenderBalls()
 
 	for (unsigned i = 0; i < BOIDS; i++) 
 	{
-		Kinematic agent = gCrowdManager.getKinematic()[i];
+		Kinematic agent = g_crowdManager->getKinematic()[i];
 		g_sphere->Render(D3DXVECTOR3(agent.position.x, agent.position.y, agent.position.z),
 			D3DXVECTOR3(0.f, agent.orientation, 0.f), D3DXVECTOR3(0.5f, 0.5f, 0.5f), color);
 	}
