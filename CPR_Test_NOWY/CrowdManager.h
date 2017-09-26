@@ -3,14 +3,31 @@
 #include "CPR_Framework.h"
 #include <list>
 
+static const float EPSILON = 0.000001f;
+
+struct DebugPoint
+{
+	D3DXVECTOR3 pos;
+	D3DXVECTOR4 color;
+
+	DebugPoint()
+		: pos(D3DXVECTOR3(0.f, 0.f, 0.f))
+		, color(D3DXVECTOR4(0.f, 0.f, 1.f, 1.f))
+	{
+
+	}
+};
+
 /** pi */
 const float M_PI = 3.14159265358979323846f;
 const float M_2PI = 6.28318530717958647692f;
 
 // The number of boids in the simulation
-#define BOIDS 10
+#define BOIDS 8
 
-#define WORLD_SIZE 25
+#define OBSTACLES 40
+
+#define WORLD_SIZE 25.f
 
 // The relative blend weights
 #define SEPARATION_WEIGHT (1.0f)
@@ -30,6 +47,19 @@ const float M_2PI = 6.28318530717958647692f;
         orientation += (rotation)*duration; \
         orientation = real_mod_real(orientation, M_2PI);
 
+struct Sphere
+{
+	/**
+	* The position of the geometric centre of the sphere.
+	*/
+	D3DXVECTOR3 position;
+
+	/**
+	* The radius of the sphere.
+	*/
+	float radius;
+};
+
 struct SteeringOutput
 {
 
@@ -39,6 +69,7 @@ struct SteeringOutput
 
 
 	SteeringOutput() : angular(0.f)
+		, linear(D3DXVECTOR3(0.f, 0.f, 0.f))
 	{}
 
 	SteeringOutput(const D3DXVECTOR3& linear, float angular = 0.f)
@@ -79,6 +110,7 @@ struct Location
 	float orientation;
 
 	Location() : orientation(0.f)
+		, position(D3DXVECTOR3(0.f, 0.f, 0.f))
 	{}
 
 	Location(const D3DXVECTOR3& position)
@@ -223,7 +255,7 @@ struct Kinematic : public Location
 class SteeringBehaviour
 {
 public:
-	Kinematic *character;
+	Kinematic *mCharacter;
 
 	virtual void getSteering(SteeringOutput* output) = 0;
 };
@@ -234,9 +266,9 @@ public:
 class Flock
 {
 public:
-	std::list<Kinematic*> boids;
-	bool *inNeighbourhood;
-	unsigned arraySize;
+	std::list<Kinematic*> mBoids;
+	bool *mInNeighbourhood;
+	unsigned int mArraySize;
 
 	Flock();
 
@@ -263,10 +295,10 @@ public:
 class BoidSteeringBehaviour : public SteeringBehaviour
 {
 public:
-	Flock *theFlock;
-	float neighbourhoodSize;
-	float neighbourhoodMinDP;
-	float maxAcceleration;
+	Flock *mFlock;
+	float mNeighbourhoodSize;
+	float mNeighbourhoodMinDP;
+	float mMaxAcceleration;
 };
 
 class Seek : public SteeringBehaviour
@@ -337,6 +369,32 @@ public:
 	virtual void getSteering(SteeringOutput* output);
 };
 
+class SeekWithInternalTarget : public Seek
+{
+protected:
+
+	D3DXVECTOR3 internal_target;
+
+	SeekWithInternalTarget();
+};
+
+class AvoidSphere : public SeekWithInternalTarget
+{
+public:
+
+	Sphere *obstacle;
+
+	float avoidMargin;
+
+	float maxLookahead;
+
+	/**
+	* Works out the desired steering and writes it into the given
+	* steering output structure.
+	*/
+	virtual void getSteering(SteeringOutput* output);
+};
+
 class CCrowdManager
 {
 	/** Holds the kinematic of all the boids. */
@@ -351,9 +409,14 @@ class CCrowdManager
 	VelocityMatchAndAlign *vMA;
 	BlendedSteering *steering;
 
+	AvoidSphere *avoid;
+
 public:
 	CCrowdManager();
+	CCrowdManager(Sphere *obstacles);
 	virtual ~CCrowdManager();
+
+	void init();
 
 	void update(float dt);
 
