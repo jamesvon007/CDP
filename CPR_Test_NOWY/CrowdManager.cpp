@@ -1,5 +1,9 @@
 #include "CrowdManager.h"
 
+DebugPoint g_pointToAvoid;
+
+bool IsLesserOrEqualWithEpsilon(float x, float y) { return ((x)-(y) < EPSILON); }
+
 void Location::integrate(const SteeringOutput& steer, float duration)
 {
 	SIMPLE_INTEGRATION(duration, steer.linear, steer.angular);
@@ -124,7 +128,7 @@ void Kinematic::setOrientationFromVelocity()
 
 Flock::Flock()
 	:
-	inNeighbourhood(0), arraySize(0)
+	mInNeighbourhood(0), mArraySize(0)
 {}
 
 unsigned Flock::prepareNeighourhood(
@@ -133,16 +137,24 @@ unsigned Flock::prepareNeighourhood(
 	float minDotProduct /* = -1.0 */)
 {
 	// Make sure the array is of the correct size
-	if (arraySize != boids.size())
+	if (mArraySize != mBoids.size())
 	{
-		if (arraySize) delete[] inNeighbourhood;
-		arraySize = boids.size();
-		if (arraySize) inNeighbourhood = new bool[arraySize];
-		memset(inNeighbourhood, 0, sizeof(bool)*arraySize);
+		if (mArraySize)
+		{
+			delete[] mInNeighbourhood;
+		}
+
+		mArraySize = mBoids.size();
+		if (mArraySize)
+		{
+			mInNeighbourhood = new bool[mArraySize];
+		}
+
+		memset(mInNeighbourhood, 0, sizeof(bool)*mArraySize);
 	}
 
 	// Compile the look vector if we need it
-	D3DXVECTOR3 look;
+	D3DXVECTOR3 look = D3DXVECTOR3(0.f, 0.f, 0.f);
 	if (minDotProduct > -1.0f)
 	{
 		look = of->getOrientationAsVector();
@@ -151,10 +163,10 @@ unsigned Flock::prepareNeighourhood(
 	Flock result;
 	std::list<Kinematic*>::iterator bi;
 	unsigned i = 0, count = 0;;
-	for (bi = boids.begin(); bi != boids.end(); bi++, i++)
+	for (bi = mBoids.begin(); bi != mBoids.end(); bi++, i++)
 	{
 		Kinematic *k = *bi;
-		inNeighbourhood[i] = false;
+		mInNeighbourhood[i] = false;
 
 		// Ignore ourself
 		if (k == of) continue;
@@ -174,7 +186,7 @@ unsigned Flock::prepareNeighourhood(
 		}
 
 		// If we get here we've passed all tests
-		inNeighbourhood[i] = true;
+		mInNeighbourhood[i] = true;
 		count++;
 	}
 	return count;
@@ -182,13 +194,13 @@ unsigned Flock::prepareNeighourhood(
 
 D3DXVECTOR3 Flock::getNeighbourhoodCenter()
 {
-	D3DXVECTOR3 center;
+	D3DXVECTOR3 center = D3DXVECTOR3(0.f, 0.f, 0.f);
 	std::list<Kinematic*>::iterator bi;
 	int i = 0;
 	int count = 0;
-	for (bi = boids.begin(); bi != boids.end(); bi++, i++)
+	for (bi = mBoids.begin(); bi != mBoids.end(); bi++, i++)
 	{
-		if (inNeighbourhood[i])
+		if (mInNeighbourhood[i])
 		{
 			center += (*bi)->position;
 			count++;
@@ -201,13 +213,13 @@ D3DXVECTOR3 Flock::getNeighbourhoodCenter()
 
 D3DXVECTOR3 Flock::getNeighbourhoodAverageVelocity()
 {
-	D3DXVECTOR3 center;
+	D3DXVECTOR3 center = D3DXVECTOR3(0.f, 0.f, 0.f);
 	std::list<Kinematic*>::iterator bi;
 	int i = 0;
 	int count = 0;
-	for (bi = boids.begin(); bi != boids.end(); bi++, i++)
+	for (bi = mBoids.begin(); bi != mBoids.end(); bi++, i++)
 	{
-		if (inNeighbourhood[i])
+		if (mInNeighbourhood[i])
 		{
 			center += (*bi)->velocity;
 			count++;
@@ -222,7 +234,7 @@ void Seek::getSteering(SteeringOutput* output)
 {
 	// First work out the direction
 	output->linear = *target;
-	output->linear -= character->position;
+	output->linear -= mCharacter->position;
 
 	// If there is no direction, do nothing
 	if (D3DXVec3LengthSq(&output->linear) > 0)
@@ -235,7 +247,7 @@ void Seek::getSteering(SteeringOutput* output)
 void Flee::getSteering(SteeringOutput* output)
 {
 	// First work out the direction
-	output->linear = character->position;
+	output->linear = mCharacter->position;
 	output->linear -= *target;
 
 	// If there is no direction, do nothing
@@ -249,18 +261,18 @@ void Flee::getSteering(SteeringOutput* output)
 void Separation::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
-	unsigned count = theFlock->prepareNeighourhood(
-		character, neighbourhoodSize, neighbourhoodMinDP
-	);
-	if (count <= 0) return;
+	unsigned count = mFlock->prepareNeighourhood(mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP);
+	if (count <= 0) 
+		return;
 
 	// Work out their center of mass
-	D3DXVECTOR3 cofm = theFlock->getNeighbourhoodCenter();
+	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
 
 	// Steer away from it.
-	flee.maxAcceleration = maxAcceleration;
-	flee.character = character;
+	flee.maxAcceleration = mMaxAcceleration;
+	flee.mCharacter = mCharacter;
 	flee.target = &cofm;
+	
 	flee.getSteering(output);
 
 }
@@ -268,38 +280,41 @@ void Separation::getSteering(SteeringOutput* output)
 void Cohesion::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
-	unsigned count = theFlock->prepareNeighourhood(
-		character, neighbourhoodSize, neighbourhoodMinDP
+	unsigned count = mFlock->prepareNeighourhood(
+		mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP
 	);
-	if (count <= 0) return;
+	if (count <= 0) 
+		return;
 
 	// Work out their center of mass
-	D3DXVECTOR3 cofm = theFlock->getNeighbourhoodCenter();
+	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
 
 	// Steer away from it.
-	seek.maxAcceleration = maxAcceleration;
-	seek.character = character;
+	seek.maxAcceleration = mMaxAcceleration;
+	seek.mCharacter = mCharacter;
 	seek.target = &cofm;
+	g_pointToAvoid.pos = cofm;
 	seek.getSteering(output);
 }
 
 void VelocityMatchAndAlign::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
-	unsigned count = theFlock->prepareNeighourhood(
-		character, neighbourhoodSize, neighbourhoodMinDP
+	unsigned count = mFlock->prepareNeighourhood(
+		mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP
 	);
-	if (count <= 0) return;
+	if (count <= 0) 
+		return;
 
 	// Work out their center of mass
-	D3DXVECTOR3 vel = theFlock->getNeighbourhoodAverageVelocity();
+	D3DXVECTOR3 vel = mFlock->getNeighbourhoodAverageVelocity();
 
 	// Try to match it
-	output->linear = vel - character->velocity;
-	if (D3DXVec3LengthSq(&output->linear) > maxAcceleration*maxAcceleration)
+	output->linear = vel - mCharacter->velocity;
+	if (D3DXVec3LengthSq(&output->linear) > mMaxAcceleration*mMaxAcceleration)
 	{
 		D3DXVec3Normalize(&output->linear, &output->linear);
-		output->linear *= maxAcceleration;
+		output->linear *= mMaxAcceleration;
 	}
 }
 
@@ -315,7 +330,7 @@ void BlendedSteering::getSteering(SteeringOutput *output)
 	for (baw = behaviours.begin(); baw != behaviours.end(); baw++)
 	{
 		// Make sure the children's character is set
-		baw->behaviour->character = character;
+		baw->behaviour->mCharacter = mCharacter;
 
 		// Get the behaviours steering and add it to the accumulator
 		baw->behaviour->getSteering(&temp);
@@ -334,9 +349,87 @@ void BlendedSteering::getSteering(SteeringOutput *output)
 	}
 }
 
+SeekWithInternalTarget::SeekWithInternalTarget()
+{
+	// Make the target pointer point at our internal target.
+	target = &internal_target;
+}
+
+void AvoidSphere::getSteering(SteeringOutput* output)
+{
+	// Clear the output, in case we don't write to it later.
+	output->clear();
+
+	// Make sure we're moving
+	if (D3DXVec3LengthSq(&mCharacter->velocity) > 0)
+	{
+		// Find the distance from the line we're moving along to the obstacle.
+		D3DXVec3Normalize(&mCharacter->velocity, &mCharacter->velocity);
+		D3DXVECTOR3 movementNormal = mCharacter->velocity;
+		D3DXVECTOR3 characterToObstacle = obstacle->position - mCharacter->position;
+
+		float distanceSquared = D3DXVec3Dot(&characterToObstacle, &movementNormal);
+		distanceSquared = D3DXVec3LengthSq(&characterToObstacle) -
+			distanceSquared*distanceSquared;
+
+		// Check for collision
+		float radius = obstacle->radius + avoidMargin;
+		if (distanceSquared < radius*radius)
+		{
+			// Find how far along our movement vector the closest pass is
+			float distanceToClosest = D3DXVec3Dot(&characterToObstacle, &movementNormal);
+
+			// Make sure this isn't behind us and is closer than our lookahead.
+			if (distanceToClosest > 0 && distanceToClosest < maxLookahead)
+			{
+				// Find the closest point
+				D3DXVECTOR3 closestPoint =
+					mCharacter->position + movementNormal*distanceToClosest;
+
+				// Find the point of avoidance
+				D3DXVECTOR3 dir = closestPoint - obstacle->position;
+				dir.y = 0.f;
+				D3DXVec3Normalize(&dir, &dir);
+				if (IsLesserOrEqualWithEpsilon(D3DXVec3Length(&dir), 0.f))
+				{
+					D3DXMATRIX R;
+					D3DXMatrixRotationAxis(&R, &D3DXVECTOR3(0.f, 1.f, 0.f), M_PI/2.f);
+					D3DXVec3TransformNormal(&dir, &movementNormal, &R);
+				}
+				
+				internal_target = obstacle->position + dir * (obstacle->radius + avoidMargin);
+
+				// Seek this point
+				Seek::getSteering(output);
+			}
+		}
+	}
+}
+
 CCrowdManager::CCrowdManager()
 {
-	static const float accel = 25.f;
+	init();
+}
+
+CCrowdManager::CCrowdManager(Sphere *obstacles)
+{
+	init();
+
+	avoid = new AvoidSphere[OBSTACLES];
+	for (unsigned i = 0; i < OBSTACLES; i++)
+	{
+		avoid[i].obstacle = &obstacles[i];
+		avoid[i].mCharacter = kinematic;
+		avoid[i].maxAcceleration = 30.f;
+		avoid[i].avoidMargin = 1.f;
+		avoid[i].maxLookahead = 6.f;
+
+		steering->behaviours.push_back(BlendedSteering::BehaviourAndWeight(avoid + i));
+	}
+}
+
+void CCrowdManager::init()
+{
 
 	// Set up the kinematics and all individual behaviours
 	kinematic = new Kinematic[BOIDS];
@@ -344,35 +437,35 @@ CCrowdManager::CCrowdManager()
 	for (unsigned i = 0; i < BOIDS; i++)
 	{
 		kinematic[i].position.x = 1.f + i;
-		kinematic[i].position.y = 2.f;
-		kinematic[i].position.z = 1.f + i;
-		kinematic[i].orientation = M_PI/4.f;
-		kinematic[i].velocity.x = i + 0.1f;
+		kinematic[i].position.y = 0.5f;
+		kinematic[i].position.z = 1.f;
+		kinematic[i].orientation = M_PI / 4.f;
+		kinematic[i].velocity.x = 0.1f;
 		kinematic[i].velocity.y = 0.f;
-		kinematic[i].velocity.z = 1.f;
+		kinematic[i].velocity.z = 0.1f;
 		kinematic[i].rotation = 0.f;
 
-		flock.boids.push_back(kinematic + i);
+		flock.mBoids.push_back(kinematic + i);
 	}
 
 	// Set up the steering behaviours (we use one for all)
 	separation = new Separation;
-	separation->maxAcceleration = accel;
-	separation->neighbourhoodSize = 5.f;
-	separation->neighbourhoodMinDP =  -1.f;
-	separation->theFlock = &flock;
+	separation->mMaxAcceleration = 15.f;
+	separation->mNeighbourhoodSize = 10.f;
+	separation->mNeighbourhoodMinDP = -1.f;
+	separation->mFlock = &flock;
 
 	cohesion = new Cohesion;
-	cohesion->maxAcceleration = accel;
-	cohesion->neighbourhoodSize = 5.f;
-	cohesion->neighbourhoodMinDP = 0.f;
-	cohesion->theFlock = &flock;
+	cohesion->mMaxAcceleration = 20.f;
+	cohesion->mNeighbourhoodSize = 20.f;
+	cohesion->mNeighbourhoodMinDP = 0.f;
+	cohesion->mFlock = &flock;
 
 	vMA = new VelocityMatchAndAlign;
-	vMA->maxAcceleration = accel;
-	vMA->neighbourhoodSize = 5.f;
-	vMA->neighbourhoodMinDP = 0.f;
-	vMA->theFlock = &flock;
+	vMA->mMaxAcceleration = 10.f;
+	vMA->mNeighbourhoodSize = 20.f;
+	vMA->mNeighbourhoodMinDP = 0.f;
+	vMA->mFlock = &flock;
 
 	steering = new BlendedSteering;
 	steering->behaviours.push_back(BlendedSteering::BehaviourAndWeight(
@@ -389,6 +482,7 @@ CCrowdManager::CCrowdManager()
 CCrowdManager::~CCrowdManager()
 {
 	delete[] kinematic;
+	delete[] avoid;
 
 	delete separation;
 	delete cohesion;
@@ -408,7 +502,7 @@ void CCrowdManager::update(float dt)
 	for (unsigned i = 0; i < BOIDS; i++)
 	{
 		// Get the steering output
-		steering->character = kinematic + i;
+		steering->mCharacter = kinematic + i;
 		steering->getSteering(&steer);
 
 		// Update the kinematic
@@ -421,6 +515,6 @@ void CCrowdManager::update(float dt)
 		// Keep in bounds of the world
 		TRIM_WORLD(kinematic[i].position.x);
 		TRIM_WORLD(kinematic[i].position.z);
-		kinematic[i].position.y = 2.f;
+		kinematic[i].position.y = 0.5f;
 	}
 }
