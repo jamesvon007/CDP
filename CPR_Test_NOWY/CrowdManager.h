@@ -2,8 +2,24 @@
 
 #include "CPR_Framework.h"
 #include <list>
+#include <assert.h>
 
 static const float EPSILON = 0.000001f;
+
+struct SSkycraper
+{
+	float height;
+	float scale;
+	D3DXVECTOR3 position;
+
+	SSkycraper(float h)
+		: height(h)
+		, scale(1)
+		, position(D3DXVECTOR3(0.f, 0.f, 0.f))
+	{
+
+	}
+};
 
 struct DebugPoint
 {
@@ -21,6 +37,7 @@ struct DebugPoint
 /** pi */
 const float M_PI = 3.14159265358979323846f;
 const float M_2PI = 6.28318530717958647692f;
+const float M_HALFSQRT2 = 0.707106781186547f;
 
 // The number of boids in the simulation
 #define BOIDS 8
@@ -280,7 +297,7 @@ public:
 	/**
 	* Sets up the boolean flags of boids in the neighbourhood of the given boid.
 	*/
-	unsigned prepareNeighourhood(
+	int prepareNeighourhood(
 		const Kinematic* of,
 		float size,
 		float minDotProduct = -1.f
@@ -446,6 +463,22 @@ public:
 	virtual void getSteering(SteeringOutput* output);
 };
 
+class Wander : public SeekWithInternalTarget
+{
+public:
+	D3DXVECTOR3 mCurrentTarget;
+
+	Flock *mFlock;
+
+	DebugPoint mWanderPoint;
+
+	/**
+	* Works out the desired steering and writes it into the given
+	* steering output structure.
+	*/
+	virtual void getSteering(SteeringOutput* output);
+};
+
 class CCrowdManager
 {
 	/** Holds the kinematic of all the boids. */
@@ -455,19 +488,51 @@ class CCrowdManager
 	Flock flock;
 
 	/** Holds the steering behaviours. */
-	Separation2 *separation2;
-	Cohesion2 *cohesion2;
+	Separation2 *separation;
+	Cohesion2 *cohesion;
+	Wander *wander;
 	VelocityMatchAndAlign *vMA;
 	PrioritySteering *steering;
+
 
 public:
 	CCrowdManager();
 	CCrowdManager(std::vector<Sphere>& obstacles);
 	virtual ~CCrowdManager();
 
+	Wander* getWander() const { assert(wander != nullptr); return wander; }
+
 	void init();
 
 	void update(float dt);
 
 	Kinematic* getKinematic() const { return kinematic; }
+};
+
+class DestinationManager
+{
+public:
+	static DestinationManager* Get();
+
+	struct SNode
+	{
+		SNode* lh;
+		SNode* rh;
+		SNode* ll;
+		SNode* rl;
+		D3DXVECTOR3 center;
+		SSkycraper* data;
+	};
+
+	void Push(const SSkycraper& data);
+	void Finalize(D3DXVECTOR2& worldBoundX, D3DXVECTOR2& worldBoundZ);
+	D3DXVECTOR3 Query() const;
+
+private:
+	DestinationManager() {};
+
+	static DestinationManager* mInstance;
+
+	std::vector<float> mReachableRangeX;
+	std::vector<float> mReachableRangeZ;
 };
