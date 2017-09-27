@@ -1,4 +1,5 @@
 #include "CrowdManager.h"
+#include <assert.h>
 
 DebugPoint g_pointToAvoid;
 
@@ -274,6 +275,24 @@ void Separation::getSteering(SteeringOutput* output)
 	flee.target = &cofm;
 	
 	flee.getSteering(output);
+}
+
+void Separation2::getSteering(SteeringOutput* output)
+{
+	// Get the neighbourhood of boids
+	unsigned count = mFlock->prepareNeighourhood(mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP);
+	if (count <= 0)
+		return;
+
+	// Work out their center of mass
+	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
+
+	// Steer away from it.
+	flee.maxAcceleration = mMaxAcceleration;
+	flee.mCharacter = mCharacter;
+	flee.target = &cofm;
+
+	flee.getSteering(output);
 
 }
 
@@ -295,6 +314,27 @@ void Cohesion::getSteering(SteeringOutput* output)
 	seek.target = &cofm;
 	g_pointToAvoid.pos = cofm;
 	seek.getSteering(output);
+}
+
+void Cohesion2::getSteering(SteeringOutput* output)
+{
+	// Get the neighbourhood of boids
+	unsigned count = mFlock->prepareNeighourhood(mCharacter, 1000.f, -1);
+	assert(count == BOIDS - 1);
+
+	// Work out their center of mass
+	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
+	D3DXVECTOR3 centerToChar = mCharacter->position - cofm;
+	if (D3DXVec3LengthSq(&centerToChar) > mTolerence*mTolerence)
+	{
+		// Steer away from it.
+		seek.maxAcceleration = mMaxAcceleration;
+		seek.mCharacter = mCharacter;
+		seek.target = &cofm;
+		g_pointToAvoid.pos = cofm;
+		seek.getSteering(output);
+	}
+
 }
 
 void VelocityMatchAndAlign::getSteering(SteeringOutput* output)
@@ -346,6 +386,35 @@ void BlendedSteering::getSteering(SteeringOutput *output)
 		totalWeight = 1.f / totalWeight;
 		output->linear *= totalWeight;
 		output->angular *= totalWeight;
+	}
+}
+
+void PrioritySteering::getSteering(SteeringOutput* output)
+{
+	// We'll need epsilon squared later.
+	float epSquared = epsilon*epsilon;
+
+	// Start with zero output, so if there are no behaviours in 
+	// the list, we'll output zero.
+	output->clear();
+
+	// Go through all the behaviours in the list
+	std::vector<SteeringBehaviour*>::iterator b;
+	for (b = behaviours.begin(); b != behaviours.end(); b++)
+	{
+		// Make sure the children's character is set
+		(*b)->mCharacter = mCharacter;
+
+		// Get the steering result from this behaviour
+		(*b)->getSteering(output);
+
+		// Check if it is non zero.
+		if (output->squareMagnitude() > epSquared)
+		{
+			// We have a result, so store it and exit.
+			lastUsed = *b;
+			return;
+		}
 	}
 }
 
@@ -411,21 +480,23 @@ CCrowdManager::CCrowdManager()
 	init();
 }
 
-CCrowdManager::CCrowdManager(Sphere *obstacles)
+CCrowdManager::CCrowdManager(std::vector<Sphere>& obstacles)
 {
 	init();
-
-	avoid = new AvoidSphere[OBSTACLES];
-	for (unsigned i = 0; i < OBSTACLES; i++)
+	for (std::vector<Sphere>::iterator it = obstacles.begin(); it != obstacles.end(); ++it)
 	{
-		avoid[i].obstacle = &obstacles[i];
-		avoid[i].mCharacter = kinematic;
-		avoid[i].maxAcceleration = 30.f;
-		avoid[i].avoidMargin = 1.f;
-		avoid[i].maxLookahead = 6.f;
-
-		steering->behaviours.push_back(BlendedSteering::BehaviourAndWeight(avoid + i));
+		AvoidSphere* avoid = new AvoidSphere;
+		avoid->obstacle = &(*it);
+		avoid->mCharacter = kinematic;
+		avoid->maxAcceleration = 30.f;
+		avoid->avoidMargin = 1.f;
+		avoid->maxLookahead = 6.f;
+		steering->behaviours.push_back(avoid);
 	}
+
+	steering->behaviours.push_back(separation2);
+	steering->behaviours.push_back(cohesion2);
+	steering->behaviours.push_back(vMA);
 }
 
 void CCrowdManager::init()
@@ -438,7 +509,7 @@ void CCrowdManager::init()
 	{
 		kinematic[i].position.x = 1.f + i;
 		kinematic[i].position.y = 0.5f;
-		kinematic[i].position.z = 1.f;
+		kinematic[i].position.z = 20.f;
 		kinematic[i].orientation = M_PI / 4.f;
 		kinematic[i].velocity.x = 0.1f;
 		kinematic[i].velocity.y = 0.f;
@@ -449,17 +520,19 @@ void CCrowdManager::init()
 	}
 
 	// Set up the steering behaviours (we use one for all)
-	separation = new Separation;
-	separation->mMaxAcceleration = 15.f;
-	separation->mNeighbourhoodSize = 10.f;
-	separation->mNeighbourhoodMinDP = -1.f;
-	separation->mFlock = &flock;
+	separation2 = new Separation2;
+	separation2->mMaxAcceleration = 5.f;
+	separation2->mNeighbourhoodSize = 2.f;
+	separation2->mTolerence = 3.f;
+	separation2->mNeighbourhoodMinDP = -1.f;
+	separation2->mFlock = &flock;
 
-	cohesion = new Cohesion;
-	cohesion->mMaxAcceleration = 20.f;
-	cohesion->mNeighbourhoodSize = 20.f;
-	cohesion->mNeighbourhoodMinDP = 0.f;
-	cohesion->mFlock = &flock;
+	cohesion2 = new Cohesion2;
+	cohesion2->mMaxAcceleration = 10.f;
+	cohesion2->mNeighbourhoodSize = 5.f;
+	cohesion2->mTolerence = 5.f;
+	cohesion2->mNeighbourhoodMinDP = 0.f;
+	cohesion2->mFlock = &flock;
 
 	vMA = new VelocityMatchAndAlign;
 	vMA->mMaxAcceleration = 10.f;
@@ -467,26 +540,22 @@ void CCrowdManager::init()
 	vMA->mNeighbourhoodMinDP = 0.f;
 	vMA->mFlock = &flock;
 
-	steering = new BlendedSteering;
-	steering->behaviours.push_back(BlendedSteering::BehaviourAndWeight(
-		separation, SEPARATION_WEIGHT
-	));
-	steering->behaviours.push_back(BlendedSteering::BehaviourAndWeight(
-		cohesion, COHESION_WEIGHT
-	));
-	steering->behaviours.push_back(BlendedSteering::BehaviourAndWeight(
-		vMA, VMA_WEIGHT
-	));
+	steering = new PrioritySteering();
+	steering->epsilon = 0.01f;
 }
 
 CCrowdManager::~CCrowdManager()
 {
 	delete[] kinematic;
-	delete[] avoid;
 
-	delete separation;
-	delete cohesion;
-	delete vMA;
+	for (std::vector<SteeringBehaviour*>::iterator it = steering->behaviours.begin(); it != steering->behaviours.end(); ++it)
+	{
+		if (*it != nullptr)
+		{
+			delete *it;
+		}
+	}
+	steering->behaviours.clear();
 }
 
 #define TRIM_WORLD(var) \
@@ -513,8 +582,27 @@ void CCrowdManager::update(float dt)
 		kinematic[i].trimMaxSpeed(20.f);
 
 		// Keep in bounds of the world
-		TRIM_WORLD(kinematic[i].position.x);
-		TRIM_WORLD(kinematic[i].position.z);
+		if (kinematic[i].position.x < -WORLD_SIZE)
+		{
+			kinematic[i].position.x = -WORLD_SIZE + 0.5f;
+			kinematic[i].velocity *= -1.f;
+		}
+		else if (kinematic[i].position.z < -WORLD_SIZE)
+		{
+			kinematic[i].position.z = -WORLD_SIZE + 0.5f;
+			kinematic[i].velocity *= -1.f;
+		}
+		else if (kinematic[i].position.x > WORLD_SIZE)
+		{
+			kinematic[i].position.x = WORLD_SIZE - 0.5f;
+			kinematic[i].velocity *= -1.f;
+		}
+		else if (kinematic[i].position.z > WORLD_SIZE)
+		{
+			kinematic[i].position.z = WORLD_SIZE - 0.5f;
+			kinematic[i].velocity *= -1.f;
+		}
+
 		kinematic[i].position.y = 0.5f;
 	}
 }

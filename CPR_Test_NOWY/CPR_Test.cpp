@@ -14,14 +14,29 @@ Mesh*	g_sphere = 0;
 float	g_angle = 0.0f;
 Mesh*	g_unitBox = 0;
 CCrowdManager* g_crowdManager;
-Sphere *g_obstacles;
+std::vector<Sphere> g_obstacles;
 
 bool g_pause = true;
 
 extern DebugPoint g_pointToAvoid;
 extern bool IsLesserOrEqualWithEpsilon(float x, float y);
 
-std::vector<float> g_skycrapers;
+struct SSkycraper
+{
+	float height;
+	float scale;
+	D3DXVECTOR3 position;
+
+	SSkycraper(float h)
+		: height(h)
+		, scale(1)
+		, position(D3DXVECTOR3(0.f, 0.f, 0.f))
+	{
+
+	}
+};
+
+std::vector<SSkycraper> g_skycrapers;
 
 struct CameraInfo
 {
@@ -125,17 +140,9 @@ void OnInit()
 
 	ReadData();
 
-	g_obstacles = new Sphere[OBSTACLES];
-	for (int i = 0; i < 8; i++)
+	for (std::vector<SSkycraper>::iterator it = g_skycrapers.begin(); it != g_skycrapers.end(); ++it)
 	{
-		for (int j = 0; j < 5; j++)
-		{
-			g_obstacles[5*i+j].position.x = -WORLD_SIZE + 9 * i;
-			g_obstacles[5 * i + j].position.y = 0.5f;
-			g_obstacles[5 * i + j].position.z = -WORLD_SIZE + 9 * j;
-			g_obstacles[5 * i + j].radius = 1.f;
-		}
-		
+		g_obstacles.push_back(Sphere(1.f, (*it).position));
 	}
 
 	g_crowdManager = new CCrowdManager(g_obstacles);
@@ -184,7 +191,7 @@ void OnRender()
 			D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(1.0f, 0.f, 0.f, 1.0f));
 	}
 	
-	//g_sphere->Render(g_pointToAvoid.pos, rot, D3DXVECTOR3(0.5f, 0.5f, 0.5f), g_pointToAvoid.color);
+	g_sphere->Render(g_pointToAvoid.pos, rot, D3DXVECTOR3(0.5f, 0.5f, 0.5f), g_pointToAvoid.color);
 	
 
 	// Render ground
@@ -259,24 +266,14 @@ void RenderBalls()
 
 void RenderSkycrapers()
 {
-	float width = 4.f;
 	D3DXVECTOR4 color(1.0f, 0.5f, 0.0f, 1.0f);
 	D3DXVECTOR3 rot(0.0f, 0.0f, 0.0f);
-	int rowColMax = static_cast<int>((sqrt(g_skycrapers.size())));
-	int row = 0;
-	int col = 0;
 
-	for (std::vector<float>::iterator it = g_skycrapers.begin(); it != g_skycrapers.end(); ++it)
+	for (std::vector<SSkycraper>::iterator it = g_skycrapers.begin(); it != g_skycrapers.end(); ++it)
 	{
-		float height = *it;
+		SSkycraper skycraper = *it;
 
-		g_unitBox->Render(D3DXVECTOR3(7.0f * (col - rowColMax/2), PlacePosY(height), 7.0f * (row - rowColMax/2)),
-			rot, D3DXVECTOR3(width, height, width), color);
-		if (col++ == rowColMax)
-		{
-			col = 0;
-			row++;
-		}
+		g_unitBox->Render(skycraper.position, rot, D3DXVECTOR3(skycraper.scale, skycraper.height, skycraper.scale), color);
 	}
 }
 
@@ -307,7 +304,7 @@ void ReadData()
 					float height = std::stof(line.substr(first, last - first));
 					if (!IsLesserOrEqualWithEpsilon(height, 0.f))
 					{
-						g_skycrapers.push_back(height);
+						g_skycrapers.push_back(SSkycraper(height));
 					}
 					first = last + 1;
 				}
@@ -320,12 +317,29 @@ void ReadData()
 				float height = std::stof(line.substr(first, last - first));
 				if (!IsLesserOrEqualWithEpsilon(height, 0.f))
 				{
-					g_skycrapers.push_back(height);
+					g_skycrapers.push_back(SSkycraper(height));
 				}
 			}
 		}
 
 		city.close();
+	}
+
+	int rowColMax = static_cast<int>((sqrt(g_skycrapers.size())));
+	int row = 0;
+	int col = 0;
+
+	for (std::vector<SSkycraper>::iterator it = g_skycrapers.begin(); it != g_skycrapers.end(); ++it)
+	{
+		SSkycraper& skycraper = *it;
+		skycraper.position = D3DXVECTOR3(7.0f * (col - rowColMax / 2), PlacePosY(skycraper.height), 7.0f * (row - rowColMax / 2));
+		skycraper.scale = 4.f;
+
+		if (col++ == rowColMax)
+		{
+			col = 0;
+			row++;
+		}
 	}
 }
 

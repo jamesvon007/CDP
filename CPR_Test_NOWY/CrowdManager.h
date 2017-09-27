@@ -49,15 +49,20 @@ const float M_2PI = 6.28318530717958647692f;
 
 struct Sphere
 {
-	/**
-	* The position of the geometric centre of the sphere.
-	*/
 	D3DXVECTOR3 position;
 
-	/**
-	* The radius of the sphere.
-	*/
 	float radius;
+
+	Sphere()
+		: radius(0.f)
+	{}
+
+	Sphere(float r, D3DXVECTOR3 pos)
+		: radius(r)
+		, position(pos)
+	{
+
+	}
 };
 
 struct SteeringOutput
@@ -299,6 +304,7 @@ public:
 	float mNeighbourhoodSize;
 	float mNeighbourhoodMinDP;
 	float mMaxAcceleration;
+	float mTolerence;
 };
 
 class Seek : public SteeringBehaviour
@@ -325,7 +331,23 @@ public:
 	virtual void getSteering(SteeringOutput* output);
 };
 
+class Separation2 : public BoidSteeringBehaviour
+{
+	Flee flee;
+
+public:
+	virtual void getSteering(SteeringOutput* output);
+};
+
 class Cohesion : public BoidSteeringBehaviour
+{
+	Seek seek;
+
+public:
+	virtual void getSteering(SteeringOutput* output);
+};
+
+class Cohesion2 : public BoidSteeringBehaviour
 {
 	Seek seek;
 
@@ -369,6 +391,35 @@ public:
 	virtual void getSteering(SteeringOutput* output);
 };
 
+class PrioritySteering : public SteeringBehaviour
+{
+public:
+	/** Holds the list of steering behaviours in priority order. The
+	* first item in the list is tried first, the subsequent entries
+	* are only considered if the first one does not return a result.
+	*/
+	std::vector<SteeringBehaviour*> behaviours;
+
+	/**
+	* After running this behaviour, this data member contains the
+	* steering behaviour that was used. This allows you to track what
+	* the priority steering behaviuor did.
+	*/
+	SteeringBehaviour* lastUsed;
+
+	/**
+	* The threshold of the steering output magnitude below which a
+	* steering behaviour is considered to have given no output.
+	*/
+	float epsilon;
+
+	/**
+	* Works out the desired steering and writes it into the given
+	* steering output structure.
+	*/
+	virtual void getSteering(SteeringOutput* output);
+};
+
 class SeekWithInternalTarget : public Seek
 {
 protected:
@@ -404,16 +455,14 @@ class CCrowdManager
 	Flock flock;
 
 	/** Holds the steering behaviours. */
-	Separation *separation;
-	Cohesion *cohesion;
+	Separation2 *separation2;
+	Cohesion2 *cohesion2;
 	VelocityMatchAndAlign *vMA;
-	BlendedSteering *steering;
-
-	AvoidSphere *avoid;
+	PrioritySteering *steering;
 
 public:
 	CCrowdManager();
-	CCrowdManager(Sphere *obstacles);
+	CCrowdManager(std::vector<Sphere>& obstacles);
 	virtual ~CCrowdManager();
 
 	void init();
