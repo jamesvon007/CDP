@@ -14,27 +14,15 @@ Mesh*	g_sphere = 0;
 float	g_angle = 0.0f;
 Mesh*	g_unitBox = 0;
 CCrowdManager* g_crowdManager;
+
+CCrowdManager* g_crowdManagerB;
 std::vector<Sphere> g_obstacles;
 
 bool g_pause = true;
 
 extern DebugPoint g_pointToAvoid;
+extern DebugPoint g_pointDest;
 extern bool IsLesserOrEqualWithEpsilon(float x, float y);
-
-struct SSkycraper
-{
-	float height;
-	float scale;
-	D3DXVECTOR3 position;
-
-	SSkycraper(float h)
-		: height(h)
-		, scale(1)
-		, position(D3DXVECTOR3(0.f, 0.f, 0.f))
-	{
-
-	}
-};
 
 std::vector<SSkycraper> g_skycrapers;
 
@@ -142,10 +130,21 @@ void OnInit()
 
 	for (std::vector<SSkycraper>::iterator it = g_skycrapers.begin(); it != g_skycrapers.end(); ++it)
 	{
-		g_obstacles.push_back(Sphere(1.f, (*it).position));
+		g_obstacles.push_back(Sphere(M_HALFSQRT2*(*it).scale, D3DXVECTOR3((*it).position.x, 0.5f, (*it).position.z)));
+		DestinationManager::Get()->Push(*it);
 	}
 
+	DestinationManager::Get()->Finalize(D3DXVECTOR2(-WORLD_SIZE, WORLD_SIZE), D3DXVECTOR2(-WORLD_SIZE, WORLD_SIZE));
 	g_crowdManager = new CCrowdManager(g_obstacles);
+
+	g_crowdManagerB = new CCrowdManager(g_obstacles);
+	for (unsigned i = 0; i < BOIDS; i++)
+	{
+		Kinematic& agent = g_crowdManagerB->getKinematic()[i];
+		agent.position.x = 10.f + i;
+		agent.position.y = 0.5f;
+		agent.position.z = 20.f;
+	}
 }
 
 //----------------------------------------------------------------------------
@@ -153,8 +152,9 @@ void OnShutdown()
 {
 	delete g_crowdManager;
 	g_crowdManager = nullptr;
-	delete[] g_obstacles;
-	g_obstacles = nullptr;
+	delete g_crowdManagerB;
+	g_crowdManagerB = nullptr;
+	g_obstacles.clear();
 }
 
 //----------------------------------------------------------------------------
@@ -171,6 +171,7 @@ void OnUpdate( float _deltaTime )
 	if (!g_pause)
 	{
 		g_crowdManager->update(_deltaTime);
+		g_crowdManagerB->update(_deltaTime);
 	}
 	
 }
@@ -181,17 +182,23 @@ void OnRender()
 	// render mesh
 	D3DXVECTOR3 rot(0.0f, 0.0f, 0.0f);
 
-	//RenderSkycrapers();
+	RenderSkycrapers();
 	RenderUI();
 	RenderBalls();
 
-	for (unsigned i = 0; i < OBSTACLES; i++)
-	{
-		g_sphere->Render(D3DXVECTOR3(g_obstacles[i].position.x, g_obstacles[i].position.y, g_obstacles[i].position.z), rot,
-			D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(1.0f, 0.f, 0.f, 1.0f));
-	}
+// 	for (unsigned i = 0; i < OBSTACLES; i++)
+// 	{
+// 		g_sphere->Render(D3DXVECTOR3(g_obstacles[i].position.x, g_obstacles[i].position.y, g_obstacles[i].position.z), rot,
+// 			D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(1.0f, 0.f, 0.f, 1.0f));
+// 	}
 	
 	g_sphere->Render(g_pointToAvoid.pos, rot, D3DXVECTOR3(0.5f, 0.5f, 0.5f), g_pointToAvoid.color);
+
+	g_sphere->Render(g_crowdManager->getWander()->mWanderPoint.pos, rot, 
+		D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(1.f, 1.f, 1.f, 1.f));
+
+	g_sphere->Render(g_crowdManagerB->getWander()->mWanderPoint.pos, rot,
+		D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(0.5f, 0.5f, 0.5f, 1.f));
 	
 
 	// Render ground
@@ -254,13 +261,18 @@ void RenderUI()
 
 void RenderBalls()
 {
-	D3DXVECTOR4 color(1.0f, 1.0f, 0.0f, 1.0f);
-
 	for (unsigned i = 0; i < BOIDS; i++) 
 	{
 		Kinematic agent = g_crowdManager->getKinematic()[i];
 		g_sphere->Render(D3DXVECTOR3(agent.position.x, agent.position.y, agent.position.z),
-			D3DXVECTOR3(0.f, agent.orientation, 0.f), D3DXVECTOR3(0.5f, 0.5f, 0.5f), color);
+			D3DXVECTOR3(0.f, agent.orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f), 
+			D3DXVECTOR4(1.0f, 1.0f, 0.0f, 1.0f));
+
+		agent = g_crowdManagerB->getKinematic()[i];
+		g_sphere->Render(D3DXVECTOR3(agent.position.x, agent.position.y, agent.position.z),
+			D3DXVECTOR3(0.f, agent.orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f), 
+			D3DXVECTOR4(0.0f, 1.0f, 1.0f, 1.0f));
+
 	}
 }
 
