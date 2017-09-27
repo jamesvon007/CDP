@@ -1,7 +1,9 @@
 #include "CrowdManager.h"
-#include <assert.h>
+#include <algorithm>
+#include <random>
 
 DebugPoint g_pointToAvoid;
+DebugPoint g_pointDest;
 
 bool IsLesserOrEqualWithEpsilon(float x, float y) { return ((x)-(y) < EPSILON); }
 
@@ -132,7 +134,7 @@ Flock::Flock()
 	mInNeighbourhood(0), mArraySize(0)
 {}
 
-unsigned Flock::prepareNeighourhood(
+int Flock::prepareNeighourhood(
 	const Kinematic* of,
 	float size,
 	float minDotProduct /* = -1.0 */)
@@ -262,7 +264,7 @@ void Flee::getSteering(SteeringOutput* output)
 void Separation::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
-	unsigned count = mFlock->prepareNeighourhood(mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP);
+	int count = mFlock->prepareNeighourhood(mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP);
 	if (count <= 0) 
 		return;
 
@@ -280,7 +282,7 @@ void Separation::getSteering(SteeringOutput* output)
 void Separation2::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
-	unsigned count = mFlock->prepareNeighourhood(mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP);
+	int count = mFlock->prepareNeighourhood(mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP);
 	if (count <= 0)
 		return;
 
@@ -299,7 +301,7 @@ void Separation2::getSteering(SteeringOutput* output)
 void Cohesion::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
-	unsigned count = mFlock->prepareNeighourhood(
+	int count = mFlock->prepareNeighourhood(
 		mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP
 	);
 	if (count <= 0) 
@@ -319,7 +321,7 @@ void Cohesion::getSteering(SteeringOutput* output)
 void Cohesion2::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
-	unsigned count = mFlock->prepareNeighourhood(mCharacter, 1000.f, -1);
+	int count = mFlock->prepareNeighourhood(mCharacter, 1000.f, -1);
 	assert(count == BOIDS - 1);
 
 	// Work out their center of mass
@@ -340,7 +342,7 @@ void Cohesion2::getSteering(SteeringOutput* output)
 void VelocityMatchAndAlign::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
-	unsigned count = mFlock->prepareNeighourhood(
+	int count = mFlock->prepareNeighourhood(
 		mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP
 	);
 	if (count <= 0) 
@@ -475,6 +477,21 @@ void AvoidSphere::getSteering(SteeringOutput* output)
 	}
 }
 
+void Wander::getSteering(SteeringOutput* output)
+{
+	D3DXVECTOR3 characterToObstacle = mCurrentTarget - mCharacter->position;
+	if (D3DXVec3LengthSq(&characterToObstacle) < 1.f || 
+		(IsLesserOrEqualWithEpsilon(mCurrentTarget.x, 0.f) && IsLesserOrEqualWithEpsilon(mCurrentTarget.z, 0.f)))
+	{
+		mCurrentTarget = DestinationManager::Get()->Query();
+	}
+
+	mWanderPoint.pos = mCurrentTarget;
+
+	internal_target = mCurrentTarget;
+	Seek::getSteering(output);
+}
+
 CCrowdManager::CCrowdManager()
 {
 	init();
@@ -489,14 +506,17 @@ CCrowdManager::CCrowdManager(std::vector<Sphere>& obstacles)
 		avoid->obstacle = &(*it);
 		avoid->mCharacter = kinematic;
 		avoid->maxAcceleration = 30.f;
-		avoid->avoidMargin = 1.f;
-		avoid->maxLookahead = 6.f;
+		avoid->avoidMargin = 0.5f;
+		avoid->maxLookahead = 2.5f;
 		steering->behaviours.push_back(avoid);
 	}
 
-	steering->behaviours.push_back(separation2);
-	steering->behaviours.push_back(cohesion2);
+	steering->behaviours.push_back(separation);
+	steering->behaviours.push_back(cohesion);
+
+	steering->behaviours.push_back(wander);
 	steering->behaviours.push_back(vMA);
+	
 }
 
 void CCrowdManager::init()
@@ -520,24 +540,29 @@ void CCrowdManager::init()
 	}
 
 	// Set up the steering behaviours (we use one for all)
-	separation2 = new Separation2;
-	separation2->mMaxAcceleration = 5.f;
-	separation2->mNeighbourhoodSize = 2.f;
-	separation2->mTolerence = 3.f;
-	separation2->mNeighbourhoodMinDP = -1.f;
-	separation2->mFlock = &flock;
+	separation = new Separation2;
+	separation->mMaxAcceleration = 5.f;
+	separation->mNeighbourhoodSize = 2.f;
+	separation->mTolerence = 3.f;
+	separation->mNeighbourhoodMinDP = -1.f;
+	separation->mFlock = &flock;
 
-	cohesion2 = new Cohesion2;
-	cohesion2->mMaxAcceleration = 10.f;
-	cohesion2->mNeighbourhoodSize = 5.f;
-	cohesion2->mTolerence = 5.f;
-	cohesion2->mNeighbourhoodMinDP = 0.f;
-	cohesion2->mFlock = &flock;
+	cohesion = new Cohesion2;
+	cohesion->mMaxAcceleration = 10.f;
+	cohesion->mNeighbourhoodSize = 5.f;
+	cohesion->mTolerence = 5.f;
+	cohesion->mNeighbourhoodMinDP = 0.f;
+	cohesion->mFlock = &flock;
 
 	vMA = new VelocityMatchAndAlign;
 	vMA->mMaxAcceleration = 10.f;
 	vMA->mNeighbourhoodSize = 20.f;
 	vMA->mNeighbourhoodMinDP = 0.f;
+	vMA->mFlock = &flock;
+
+	wander = new Wander;
+	wander->maxAcceleration = 15.f;
+	wander->mCurrentTarget = D3DXVECTOR3(0.f, 0.5f, 0.f);
 	vMA->mFlock = &flock;
 
 	steering = new PrioritySteering();
@@ -605,4 +630,76 @@ void CCrowdManager::update(float dt)
 
 		kinematic[i].position.y = 0.5f;
 	}
+}
+
+DestinationManager* DestinationManager::mInstance = nullptr;
+
+DestinationManager* DestinationManager::Get()
+{
+	if (mInstance == nullptr)
+	{
+		mInstance = new DestinationManager;
+	}
+	return mInstance;
+}
+
+void DestinationManager::Push(const SSkycraper& data)
+{
+
+	mReachableRangeX.push_back(data.position.x - data.scale / 2.f);
+	mReachableRangeX.push_back(data.position.x + data.scale / 2.f);
+
+	mReachableRangeZ.push_back(data.position.z - data.scale / 2.f);
+	mReachableRangeZ.push_back(data.position.z + data.scale / 2.f);
+}
+
+void DestinationManager::Finalize(D3DXVECTOR2& worldBoundX, D3DXVECTOR2& worldBoundZ)
+{
+	std::sort(mReachableRangeX.begin(), mReachableRangeX.end());
+	auto last = std::unique(mReachableRangeX.begin(), mReachableRangeX.end());
+	mReachableRangeX.erase(last, mReachableRangeX.end());
+	if (mReachableRangeX.front() > worldBoundX.x)
+	{
+		mReachableRangeX.insert(mReachableRangeX.begin(), worldBoundX.x);
+	}
+
+	if (mReachableRangeX.back() < worldBoundX.y)
+	{
+		mReachableRangeX.push_back(worldBoundX.y);
+	}
+
+	std::sort(mReachableRangeZ.begin(), mReachableRangeZ.end());
+	last = std::unique(mReachableRangeZ.begin(), mReachableRangeZ.end());
+	mReachableRangeZ.erase(last, mReachableRangeZ.end());
+	if (mReachableRangeZ.front() > worldBoundZ.x)
+	{
+		mReachableRangeZ.insert(mReachableRangeZ.begin(), worldBoundZ.x);
+	}
+
+	if (mReachableRangeZ.back() < worldBoundZ.y)
+	{
+		mReachableRangeZ.push_back(worldBoundZ.y);
+	}
+
+}
+
+D3DXVECTOR3 DestinationManager::Query() const
+{
+	D3DXVECTOR3 dest;
+	std::random_device rd;
+	std::mt19937 gen(rd());
+
+	std::uniform_int_distribution<> disX(0, mReachableRangeX.size()/2-1);
+	int xIndex = disX(gen);
+	std::uniform_real_distribution<float> xDest(mReachableRangeX.at(2*xIndex), mReachableRangeX.at(2 * xIndex + 1));
+	dest.x = xDest(gen);
+
+	std::uniform_int_distribution<> disZ(0, mReachableRangeZ.size() / 2 - 1);
+	int zIndex = disZ(gen);
+	std::uniform_real_distribution<float> zDest(mReachableRangeZ.at(2 * zIndex), mReachableRangeZ.at(2 * zIndex + 1));
+	dest.z = zDest(gen);
+	
+	dest.y = 0.5f;
+
+	return dest;
 }
