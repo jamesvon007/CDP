@@ -7,6 +7,8 @@ DebugPoint g_pointDest;
 
 bool IsLesserOrEqualWithEpsilon(float x, float y) { return ((x)-(y) < EPSILON); }
 
+extern std::ofstream g_ofs;
+
 void Location::integrate(const SteeringOutput& steer, float duration)
 {
 	SIMPLE_INTEGRATION(duration, steer.linear, steer.angular);
@@ -715,7 +717,7 @@ CollisionService* CollisionService::Get()
 	return mInstance;
 }
 
-void CollisionService::Push(const SSkycraper& data, SNode* node)
+void CollisionService::Push(SSkycraper& data, SNode* node)
 {
 	if (node == nullptr)
 	{
@@ -724,6 +726,10 @@ void CollisionService::Push(const SSkycraper& data, SNode* node)
 
 	if (IsLesserOrEqualWithEpsilon(node->halfWidth.x, 4.f) || IsLesserOrEqualWithEpsilon(node->halfWidth.y, 4))
 	{
+		if (node->center.x == 9.375f && node->center.z == 15.625f)
+		{
+			data.color = D3DXVECTOR4(0.5f, 1.f, 1.f, 1.f);
+		}
 		node->data.push_back(&data);
 		return;
 	}
@@ -751,7 +757,7 @@ void CollisionService::Push(const SSkycraper& data, SNode* node)
 			Push(data, node->rl);
 		}
 	}
-	else if (data.position.x <= node->center.x)
+	else
 	{
 		if (data.position.z > node->center.z)
 		{
@@ -784,47 +790,82 @@ void CollisionService::AddRedBall(D3DXVECTOR3& pos, D3DXVECTOR3& vel, D3DXVECTOR
 
 void CollisionService::Update(float dt)
 {
-	for (std::vector<Simulation>::iterator it = mRedBall.begin(); it != mRedBall.end(); ++it)
+	for (std::list<Simulation>::iterator it = mRedBall.begin(); it != mRedBall.end(); )
 	{
 		Simulation& ball = *it;
 		if (IsLesserOrEqualWithEpsilon(D3DXVec3LengthSq(&ball.velocity), 0.00000001f))
 		{
+			it = mRedBall.erase(it);
 			continue;
 		}
+
+		if (ball.position.x < -WORLD_SIZE || ball.position.x > WORLD_SIZE
+			|| ball.position.z > WORLD_SIZE || ball.position.z < -WORLD_SIZE)
+		{
+			it = mRedBall.erase(it);
+			continue;
+		}
+
+		++it;
 
 		D3DXVECTOR3 normal;
 		D3DXVec3Normalize(&normal, &ball.acceleration);
 		ball.acceleration -= dt * normal;
-
-		const std::vector<const SSkycraper*>& skycrapers = GetNearestSkycraper(ball);
-		for (std::vector<const SSkycraper*>::const_iterator sIt = skycrapers.begin(); sIt != skycrapers.end(); ++sIt)
-		{
-			const SSkycraper* skycraper = *sIt;
-			if (InSkycraper(ball.position + ball.velocity * dt, skycraper))
-			{
-				ball.velocity *= -5.f;
-				ball.position += ball.velocity*dt;
-				continue;
-			}
-		}
-
 		ball.velocity += ball.acceleration * dt;
 		ball.position += ball.velocity * dt;
+
+		int tryTimes = 0;
+		const std::vector<SSkycraper*>* skycrapers = nullptr;
+		do 
+		{
+			skycrapers = GetNearestSkycraper(ball);
+			tryTimes++;
+		}while((skycrapers == nullptr || skycrapers->size() == 0) && tryTimes<4)
+		
+		if (skycrapers == nullptr)
+		{
+			continue;
+		}
+
+		for (std::vector<SSkycraper*>::const_iterator sIt = skycrapers->begin(); sIt != skycrapers->end(); ++sIt)
+		{
+			SSkycraper* skycraper = *sIt;
+			skycraper->color = D3DXVECTOR4(1.f, 1.f, 1.f, 1.f);
+			if (InSkycraper(ball.position, skycraper))
+			{
+				g_ofs << "InSkycraper" << std::endl;
+				ball.velocity *= -1.f;
+				ball.position += ball.velocity*dt;
+				break;
+			}
+		}
 	}
 }
 
 bool CollisionService::InSkycraper(D3DXVECTOR3& pos, const SSkycraper* skycraper) const
 {
+	g_ofs << "pos[" << pos.x << "," << pos.y << "," << pos.z << "] min[" << 
+		skycraper->minBoundingBox.x << "," << skycraper->minBoundingBox.y << "," << skycraper->minBoundingBox.z <<
+		"] max[" <<
+		skycraper->maxBoundingBox.x << "," << skycraper->maxBoundingBox.y << "," << skycraper->maxBoundingBox.z << 
+		"]" << std::endl;
 	return (pos.x > skycraper->minBoundingBox.x && pos.x < skycraper->maxBoundingBox.x && pos.y > skycraper->minBoundingBox.y
 		&& pos.y < skycraper->maxBoundingBox.y && pos.z > skycraper->minBoundingBox.z && pos.z < skycraper->maxBoundingBox.z);
 }
 
-const std::vector<const SSkycraper*>& CollisionService::GetNearestSkycraper(const Simulation& ball, const SNode* node) const
+std::vector<SSkycraper*>* CollisionService::GetNearestSkycraper(const Simulation& ball, SNode* node)
 {
 	D3DXVECTOR3 position = ball.position;
 	if (node == nullptr)
 	{
 		node = &mRoot;
+	}
+
+	if (position.x < -WORLD_SIZE || position.x > WORLD_SIZE
+		|| position.z > WORLD_SIZE || position.z < -WORLD_SIZE)
+	{
+		g_ofs << "exceeding World Size" << std::endl;
+		return nullptr;
 	}
 
 	if (position.x <= node->center.x)
@@ -833,7 +874,7 @@ const std::vector<const SSkycraper*>& CollisionService::GetNearestSkycraper(cons
 		{
 			if (node->ll == nullptr)
 			{
-				return node->data;
+				return &(node->data);
 			}
 			return GetNearestSkycraper(ball, node->ll);
 		}
@@ -841,7 +882,7 @@ const std::vector<const SSkycraper*>& CollisionService::GetNearestSkycraper(cons
 		{
 			if (node->lh == nullptr)
 			{
-				return node->data;
+				return &(node->data);
 			}
 			return GetNearestSkycraper(ball, node->lh);
 		}
@@ -852,7 +893,7 @@ const std::vector<const SSkycraper*>& CollisionService::GetNearestSkycraper(cons
 		{
 			if (node->rl == nullptr)
 			{
-				return node->data;
+				return &(node->data);
 			}
 			return GetNearestSkycraper(ball, node->rl);
 		}
@@ -860,7 +901,7 @@ const std::vector<const SSkycraper*>& CollisionService::GetNearestSkycraper(cons
 		{
 			if (node->rh == nullptr)
 			{
-				return node->data;
+				return &(node->data);
 			}
 			return GetNearestSkycraper(ball, node->rh);
 		}
