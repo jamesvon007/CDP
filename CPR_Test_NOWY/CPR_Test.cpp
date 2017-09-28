@@ -1,6 +1,5 @@
 #include "CPR_Framework.h"
 #include <vector>
-#include <fstream>
 #include <string>
 #include <ctype.h>
 #include <chrono>
@@ -25,6 +24,8 @@ extern DebugPoint g_pointDest;
 extern bool IsLesserOrEqualWithEpsilon(float x, float y);
 
 std::vector<SSkycraper> g_skycrapers;
+
+std::ofstream g_ofs;
 
 struct CameraInfo
 {
@@ -151,6 +152,9 @@ void OnInit()
 		agent.position.y = 0.5f;
 		agent.position.z = 20.f;
 	}
+
+	g_ofs.open("fps.txt", std::ofstream::out | std::ofstream::trunc);
+	g_ofs << "display:" << std::endl;
 }
 
 //----------------------------------------------------------------------------
@@ -161,6 +165,8 @@ void OnShutdown()
 	delete g_crowdManagerB;
 	g_crowdManagerB = nullptr;
 	g_obstacles.clear();
+
+	g_ofs.close();
 }
 
 //----------------------------------------------------------------------------
@@ -239,6 +245,14 @@ void UpdateCamera(float _deltaTime)
 	{
 		g_camera.Rise(-10.f * _deltaTime);
 	}
+	else if (Keyboard::IsKeyPressed(Keyboard::KEY_LEFT))
+	{
+		g_camera.RotateY(-5.f * _deltaTime);
+	}
+	else if (Keyboard::IsKeyPressed(Keyboard::KEY_RIGHT))
+	{
+		g_camera.RotateY(5.f * _deltaTime);
+	}
 
 	D3DXVECTOR2 newPos = Mouse::GetPosition();
 	float dx = D3DXToRadian(0.1f*(newPos.x - g_camera.mLastMousePos.x));
@@ -259,12 +273,22 @@ void UpdateCamera(float _deltaTime)
 
 void UpdateRedBalls(float dt)
 {
-	if (Mouse::LeftMouseButton())
+	static std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+	static std::chrono::steady_clock::time_point end = start;
+
+	std::chrono::milliseconds diff = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+	if (diff.count() >= 1000)
 	{
-		CollisionService::Get()->AddRedBall(g_camera.mPosition, 5.f*g_camera.mLook, 0.001f*g_camera.mLook, 0.2f);
+		if (Mouse::LeftMouseButton())
+		{
+			CollisionService::Get()->AddRedBall(g_camera.mPosition, 5.f*g_camera.mLook, 0.001f*g_camera.mLook, 0.2f);
+			start = std::chrono::steady_clock::now();
+		}
 	}
 
+
 	CollisionService::Get()->Update(dt);
+	end = std::chrono::steady_clock::now();
 }
 
 void RenderUI()
@@ -296,7 +320,7 @@ void RenderBalls()
 
 void RenderRedBalls()
 {
-	for (std::vector<CollisionService::Simulation>::const_iterator it = CollisionService::Get()->GetRedBalls().begin(); it != CollisionService::Get()->GetRedBalls().end(); ++it)
+	for (std::list<CollisionService::Simulation>::const_iterator it = CollisionService::Get()->GetRedBalls().begin(); it != CollisionService::Get()->GetRedBalls().end(); ++it)
 	{
 		g_sphere->Render(D3DXVECTOR3((*it).position.x, (*it).position.y, (*it).position.z),
 			D3DXVECTOR3(0.f, 0.f, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f), D3DXVECTOR4(1.0f, 0.0f, 0.0f, 1.0f));
@@ -305,14 +329,13 @@ void RenderRedBalls()
 
 void RenderSkycrapers()
 {
-	D3DXVECTOR4 color(1.0f, 0.5f, 0.0f, 1.0f);
 	D3DXVECTOR3 rot(0.0f, 0.0f, 0.0f);
 
 	for (std::vector<SSkycraper>::iterator it = g_skycrapers.begin(); it != g_skycrapers.end(); ++it)
 	{
 		SSkycraper skycraper = *it;
 
-		g_unitBox->Render(skycraper.position, rot, D3DXVECTOR3(skycraper.scale, skycraper.height, skycraper.scale), color);
+		g_unitBox->Render(skycraper.position, rot, D3DXVECTOR3(skycraper.scale, skycraper.height, skycraper.scale), skycraper.color);
 	}
 }
 
@@ -395,7 +418,7 @@ void CalculateFrameStats()
 	{
 		float fps = (float)frameCnt; // fps = frameCnt / 1
 		
-		std::cout << "FPS: " << fps << std::endl;
+		//g_ofs << "FPS: " << fps << std::endl;
 
 		// Reset for next average.
 		frameCnt = 0;
