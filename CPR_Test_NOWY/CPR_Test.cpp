@@ -87,6 +87,8 @@ void RenderSkycrapers();
 void CalculateFrameStats();
 void RenderUI();
 void RenderBalls();
+void RenderRedBalls();
+void UpdateRedBalls(float dt);
 
 
 /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -130,8 +132,12 @@ void OnInit()
 
 	for (std::vector<SSkycraper>::iterator it = g_skycrapers.begin(); it != g_skycrapers.end(); ++it)
 	{
+		(*it).minBoundingBox = D3DXVECTOR3((*it).position.x - (*it).scale / 2.f, (*it).position.y - (*it).height / 2.f, (*it).position.z - (*it).scale / 2.f);
+		(*it).maxBoundingBox = D3DXVECTOR3((*it).position.x + (*it).scale / 2.f, (*it).position.y + (*it).height / 2.f, (*it).position.z + (*it).scale / 2.f);
 		g_obstacles.push_back(Sphere(M_HALFSQRT2*(*it).scale, D3DXVECTOR3((*it).position.x, 0.5f, (*it).position.z)));
 		DestinationManager::Get()->Push(*it);
+
+		CollisionService::Get()->Push(*it);
 	}
 
 	DestinationManager::Get()->Finalize(D3DXVECTOR2(-WORLD_SIZE, WORLD_SIZE), D3DXVECTOR2(-WORLD_SIZE, WORLD_SIZE));
@@ -162,6 +168,7 @@ void OnUpdate( float _deltaTime )
 {
 	UpdateCamera(_deltaTime);
 	CalculateFrameStats();
+	UpdateRedBalls(_deltaTime);
 
 	if (Keyboard::IsKeyPressed(Keyboard::KEY_SPACE))
 	{
@@ -185,6 +192,7 @@ void OnRender()
 	RenderSkycrapers();
 	RenderUI();
 	RenderBalls();
+	RenderRedBalls();
 
 // 	for (unsigned i = 0; i < OBSTACLES; i++)
 // 	{
@@ -249,6 +257,16 @@ void UpdateCamera(float _deltaTime)
 	Camera::LookAt(g_camera.mPosition, g_camera.mPosition + 10.f * g_camera.mLook);
 }
 
+void UpdateRedBalls(float dt)
+{
+	if (Mouse::LeftMouseButton())
+	{
+		CollisionService::Get()->AddRedBall(g_camera.mPosition, 5.f*g_camera.mLook, 0.001f*g_camera.mLook, 0.2f);
+	}
+
+	CollisionService::Get()->Update(dt);
+}
+
 void RenderUI()
 {
 	D3DXVECTOR4 color(1.0f, 0.0f, 0.0f, 1.0f);
@@ -273,6 +291,15 @@ void RenderBalls()
 			D3DXVECTOR3(0.f, agent.orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f), 
 			D3DXVECTOR4(0.0f, 1.0f, 1.0f, 1.0f));
 
+	}
+}
+
+void RenderRedBalls()
+{
+	for (std::vector<CollisionService::Simulation>::const_iterator it = CollisionService::Get()->GetRedBalls().begin(); it != CollisionService::Get()->GetRedBalls().end(); ++it)
+	{
+		g_sphere->Render(D3DXVECTOR3((*it).position.x, (*it).position.y, (*it).position.z),
+			D3DXVECTOR3(0.f, 0.f, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f), D3DXVECTOR4(1.0f, 0.0f, 0.0f, 1.0f));
 	}
 }
 

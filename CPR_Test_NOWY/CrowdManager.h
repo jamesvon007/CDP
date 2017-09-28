@@ -11,6 +11,8 @@ struct SSkycraper
 	float height;
 	float scale;
 	D3DXVECTOR3 position;
+	D3DXVECTOR3 minBoundingBox;
+	D3DXVECTOR3 maxBoundingBox;
 
 	SSkycraper(float h)
 		: height(h)
@@ -514,16 +516,6 @@ class DestinationManager
 public:
 	static DestinationManager* Get();
 
-	struct SNode
-	{
-		SNode* lh;
-		SNode* rh;
-		SNode* ll;
-		SNode* rl;
-		D3DXVECTOR3 center;
-		SSkycraper* data;
-	};
-
 	void Push(const SSkycraper& data);
 	void Finalize(D3DXVECTOR2& worldBoundX, D3DXVECTOR2& worldBoundZ);
 	D3DXVECTOR3 Query() const;
@@ -535,4 +527,71 @@ private:
 
 	std::vector<float> mReachableRangeX;
 	std::vector<float> mReachableRangeZ;
+};
+
+class CollisionService
+{
+public:
+	struct SNode
+	{
+		SNode* lh;
+		SNode* rh;
+		SNode* ll;
+		SNode* rl;
+		D3DXVECTOR3 center;
+		D3DXVECTOR2 halfWidth;
+		std::vector<const SSkycraper*> data;
+
+		SNode(D3DXVECTOR3 c, D3DXVECTOR2 hw)
+			: lh(nullptr)
+			, rh(nullptr)
+			, ll(nullptr)
+			, rl(nullptr)
+		{
+			center = c;
+			halfWidth = hw;
+		}
+	};
+
+	struct Simulation
+	{
+		D3DXVECTOR3 position;
+		D3DXVECTOR3 velocity;
+		D3DXVECTOR3 acceleration;
+		float radius;
+
+		Simulation(D3DXVECTOR3& pos, D3DXVECTOR3& vel, D3DXVECTOR3& accel, float r)
+			: position(pos)
+			, velocity(vel)
+			, acceleration(accel)
+			, radius(r)
+		{
+
+		}
+	};
+
+	static CollisionService* Get();
+
+	void Push(const SSkycraper& data, SNode* node = nullptr);
+
+	void AddRedBall(D3DXVECTOR3& pos, D3DXVECTOR3& vel, D3DXVECTOR3& accel, float r);
+
+	void Update(float dt);
+
+	const std::vector<Simulation>& GetRedBalls() const { return mRedBall; };
+
+private:
+	CollisionService() : mRoot(D3DXVECTOR3(0.f, 0.f, 0.f), D3DXVECTOR2(WORLD_SIZE, WORLD_SIZE))
+	{};
+
+	static CollisionService* mInstance;
+
+	SNode mRoot;
+
+	std::vector<Simulation> mRedBall;
+
+private:
+	const std::vector<const SSkycraper*>& GetNearestSkycraper(const Simulation& ball, const SNode* node = nullptr) const;
+
+	bool InSkycraper(D3DXVECTOR3& pos, const SSkycraper* skycraper) const;
 };
