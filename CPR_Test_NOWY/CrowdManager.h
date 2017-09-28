@@ -3,6 +3,7 @@
 #include "CPR_Framework.h"
 #include <list>
 #include <assert.h>
+#include <fstream>
 
 static const float EPSILON = 0.000001f;
 
@@ -13,11 +14,13 @@ struct SSkycraper
 	D3DXVECTOR3 position;
 	D3DXVECTOR3 minBoundingBox;
 	D3DXVECTOR3 maxBoundingBox;
+	D3DXVECTOR4 color;
 
 	SSkycraper(float h)
 		: height(h)
 		, scale(1)
 		, position(D3DXVECTOR3(0.f, 0.f, 0.f))
+		, color(D3DXVECTOR4(1.0f, 0.5f, 0.0f, 1.0f))
 	{
 
 	}
@@ -540,7 +543,7 @@ public:
 		SNode* rl;
 		D3DXVECTOR3 center;
 		D3DXVECTOR2 halfWidth;
-		std::vector<const SSkycraper*> data;
+		std::vector<SSkycraper*> data;
 
 		SNode(D3DXVECTOR3 c, D3DXVECTOR2 hw)
 			: lh(nullptr)
@@ -572,13 +575,13 @@ public:
 
 	static CollisionService* Get();
 
-	void Push(const SSkycraper& data, SNode* node = nullptr);
+	void Push(SSkycraper& data, SNode* node = nullptr);
 
 	void AddRedBall(D3DXVECTOR3& pos, D3DXVECTOR3& vel, D3DXVECTOR3& accel, float r);
 
 	void Update(float dt);
 
-	const std::vector<Simulation>& GetRedBalls() const { return mRedBall; };
+	const std::list<Simulation>& GetRedBalls() const { return mRedBall; };
 
 private:
 	CollisionService() : mRoot(D3DXVECTOR3(0.f, 0.f, 0.f), D3DXVECTOR2(WORLD_SIZE, WORLD_SIZE))
@@ -588,10 +591,10 @@ private:
 
 	SNode mRoot;
 
-	std::vector<Simulation> mRedBall;
+	std::list<Simulation> mRedBall;
 
 private:
-	const std::vector<const SSkycraper*>& GetNearestSkycraper(const Simulation& ball, const SNode* node = nullptr) const;
+	std::vector<SSkycraper*>* GetNearestSkycraper(const Simulation& ball, SNode* node = nullptr);
 
 	bool InSkycraper(D3DXVECTOR3& pos, const SSkycraper* skycraper) const;
 };
