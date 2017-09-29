@@ -44,17 +44,10 @@ const float M_PI = 3.14159265358979323846f;
 const float M_2PI = 6.28318530717958647692f;
 const float M_HALFSQRT2 = 0.707106781186547f;
 
-// The number of boids in the simulation
+// The number of boids in the simulation at start
 #define BOIDS 8
 
-#define OBSTACLES 40
-
 #define WORLD_SIZE 25.f
-
-// The relative blend weights
-#define SEPARATION_WEIGHT (1.0f)
-#define COHESION_WEIGHT (1.0f)
-#define VMA_WEIGHT (2.0f)
 
 #define real_atan2 atan2f
 #define real_pow powf
@@ -358,23 +351,7 @@ public:
 	virtual void getSteering(SteeringOutput* output);
 };
 
-class Separation2 : public BoidSteeringBehaviour
-{
-	Flee flee;
-
-public:
-	virtual void getSteering(SteeringOutput* output);
-};
-
 class Cohesion : public BoidSteeringBehaviour
-{
-	Seek seek;
-
-public:
-	virtual void getSteering(SteeringOutput* output);
-};
-
-class Cohesion2 : public BoidSteeringBehaviour
 {
 	Seek seek;
 
@@ -388,56 +365,13 @@ public:
 	virtual void getSteering(SteeringOutput* output);
 };
 
-class BlendedSteering : public SteeringBehaviour
-{
-public:
-	/**
-	* Holds a steering behaviour with its associated weight.
-	*/
-	struct BehaviourAndWeight
-	{
-		SteeringBehaviour *behaviour;
-		float weight;
-
-		BehaviourAndWeight(SteeringBehaviour *behaviour, float weight = 1.f)
-			:
-			behaviour(behaviour), weight(weight)
-		{}
-	};
-
-	/**
-	* Holds the list of behaviour and their corresponding blending
-	* weights.
-	*/
-	std::vector<BehaviourAndWeight> behaviours;
-
-	/**
-	* Works out the desired steering and writes it into the given
-	* steering output structure.
-	*/
-	virtual void getSteering(SteeringOutput* output);
-};
-
 class PrioritySteering : public SteeringBehaviour
 {
 public:
-	/** Holds the list of steering behaviours in priority order. The
-	* first item in the list is tried first, the subsequent entries
-	* are only considered if the first one does not return a result.
-	*/
 	std::vector<SteeringBehaviour*> behaviours;
 
-	/**
-	* After running this behaviour, this data member contains the
-	* steering behaviour that was used. This allows you to track what
-	* the priority steering behaviuor did.
-	*/
 	SteeringBehaviour* lastUsed;
 
-	/**
-	* The threshold of the steering output magnitude below which a
-	* steering behaviour is considered to have given no output.
-	*/
 	float epsilon;
 
 	/**
@@ -493,7 +427,6 @@ class CCrowdManager
 {
 private:
 	/** Holds the kinematic of all the boids. */
-	//Kinematic *kinematic;
 	std::list<Kinematic> kinematic;
 
 	/** Holds the flock */
@@ -501,12 +434,11 @@ private:
 
 public:
 	/** Holds the steering behaviours. */
-	Separation2 *separation;
-	Cohesion2 *cohesion;
+	Separation *separation;
+	Cohesion *cohesion;
 	Wander *wander;
 	VelocityMatchAndAlign *vMA;
 	PrioritySteering *steering;
-
 
 public:
 	CCrowdManager();
@@ -515,17 +447,20 @@ public:
 
 	Wander* getWander() const { assert(wander != nullptr); return wander; }
 
-	void init();
+	void AddMember(Kinematic& member) { kinematic.push_back(member); }
 
-	void update(float dt);
+	void Init();
 
-	std::list<Kinematic>& getKinematic() { return kinematic; }
+	void Update(float dt);
+
+	std::list<Kinematic>& GetKinematic() { return kinematic; }
 };
 
 class DestinationManager
 {
 public:
 	static DestinationManager* Get();
+	static void Destroy();
 
 	void Push(const SSkycraper& data);
 	void Finalize(D3DXVECTOR2& worldBoundX, D3DXVECTOR2& worldBoundZ);
@@ -585,8 +520,10 @@ public:
 	};
 
 	static LevelService* Get();
+	static void Destroy();
 
 	void Push(SSkycraper& data, SNode* node = nullptr);
+	void Clear(SNode& node);
 
 	void AddRedBall(D3DXVECTOR3& pos, D3DXVECTOR3& vel, D3DXVECTOR3& accel, float r);
 
@@ -596,6 +533,8 @@ public:
 	std::list<Simulation>& ModifyRedBalls() { return mRedBalls; }
 
 	std::list<CCrowdManager*>& GetYellowBalls() { return mYellowBalls; }
+
+	SNode& GetSkyperRoot() { return mSkycraperRoot;}
 
 private:
 	LevelService() : mSkycraperRoot(D3DXVECTOR3(0.f, 0.f, 0.f), D3DXVECTOR2(WORLD_SIZE, WORLD_SIZE))
@@ -616,8 +555,6 @@ private:
 
 class PursueService
 {
-private:
-	std::list<LevelService::Simulation*> pursueAgents;
 public:
 	Wander *wander;
 	PrioritySteering *steering;
@@ -627,17 +564,16 @@ public:
 	virtual ~PursueService();
 
 	static PursueService* Get();
+	static void Destroy();
 
 	Wander* getWander() const { assert(wander != nullptr); return wander; }
 
-	void init();
+	void Init();
 
-	void update(float dt);
+	void Request(float dt, LevelService::Simulation& pursueAgent);
 
-	std::list<LevelService::Simulation*>& getPursueAgents() { return pursueAgents; }
-
-	void AddPursueAgent(LevelService::Simulation* agent) { pursueAgents.push_back(agent); }
-
+	D3DXVECTOR3 FindClosestYellowBall(D3DXVECTOR3& pursuer, CCrowdManager** belongTo=nullptr);
+	
 private:
 	static PursueService* mInstance;
 };

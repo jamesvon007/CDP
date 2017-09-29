@@ -12,11 +12,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CPR_Framework.h" />
-    <ClInclude Include="CrowdManager.h" />
+    <ClInclude Include="CPR_Utils.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CPR_Test.cpp" />
-    <ClCompile Include="CrowdManager.cpp" />
+    <ClCompile Include="CPR_Utils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Test.txt" />

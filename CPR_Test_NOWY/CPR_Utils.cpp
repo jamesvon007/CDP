@@ -1,4 +1,4 @@
-#include "CrowdManager.h"
+#include "CPR_Utils.h"
 #include <algorithm>
 #include <random>
 
@@ -266,24 +266,6 @@ void Separation::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
 	int count = mFlock->prepareNeighourhood(mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP);
-	if (count <= 0) 
-		return;
-
-	// Work out their center of mass
-	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
-
-	// Steer away from it.
-	flee.setAccelaration(mMaxAcceleration);
-	flee.mCharacter = mCharacter;
-	flee.target = &cofm;
-	
-	flee.getSteering(output);
-}
-
-void Separation2::getSteering(SteeringOutput* output)
-{
-	// Get the neighbourhood of boids
-	int count = mFlock->prepareNeighourhood(mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP);
 	if (count <= 0)
 		return;
 
@@ -300,26 +282,6 @@ void Separation2::getSteering(SteeringOutput* output)
 }
 
 void Cohesion::getSteering(SteeringOutput* output)
-{
-	// Get the neighbourhood of boids
-	int count = mFlock->prepareNeighourhood(
-		mCharacter, mNeighbourhoodSize, mNeighbourhoodMinDP
-	);
-	if (count <= 0) 
-		return;
-
-	// Work out their center of mass
-	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
-
-	// Steer away from it.
-	seek.setAccelaration(mMaxAcceleration);
-	seek.mCharacter = mCharacter;
-	seek.target = &cofm;
-	g_pointToAvoid.pos = cofm;
-	seek.getSteering(output);
-}
-
-void Cohesion2::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
 	int count = mFlock->prepareNeighourhood(mCharacter, 1000.f, -1);
@@ -357,37 +319,6 @@ void VelocityMatchAndAlign::getSteering(SteeringOutput* output)
 	{
 		D3DXVec3Normalize(&output->linear, &output->linear);
 		output->linear *= mMaxAcceleration;
-	}
-}
-
-void BlendedSteering::getSteering(SteeringOutput *output)
-{
-	// Clear the output to start with
-	output->clear();
-
-	// Go through all the behaviours in the list
-	std::vector<BehaviourAndWeight>::iterator baw;
-	float totalWeight = 0.f;
-	SteeringOutput temp;
-	for (baw = behaviours.begin(); baw != behaviours.end(); baw++)
-	{
-		// Make sure the children's character is set
-		baw->behaviour->mCharacter = mCharacter;
-
-		// Get the behaviours steering and add it to the accumulator
-		baw->behaviour->getSteering(&temp);
-		output->linear += temp.linear * baw->weight;
-		output->angular += temp.angular * baw->weight;
-
-		totalWeight += baw->weight;
-	}
-
-	// Divide the accumulated output by the total weight
-	if (totalWeight > 0.f)
-	{
-		totalWeight = 1.f / totalWeight;
-		output->linear *= totalWeight;
-		output->angular *= totalWeight;
 	}
 }
 
@@ -479,13 +410,6 @@ void AvoidSphere::getSteering(SteeringOutput* output)
 
 void Wander::getSteering(SteeringOutput* output)
 {
-	D3DXVECTOR3 characterToObstacle = mCurrentTarget - mCharacter->position;
-	if (D3DXVec3LengthSq(&characterToObstacle) < 1.f || 
-		(IsLesserOrEqualWithEpsilon(mCurrentTarget.x, 0.f) && IsLesserOrEqualWithEpsilon(mCurrentTarget.z, 0.f)))
-	{
-		mCurrentTarget = DestinationManager::Get()->Query();
-	}
-
 	mWanderPoint.pos = mCurrentTarget;
 
 	internal_target = mCurrentTarget;
@@ -496,8 +420,6 @@ PursueService* PursueService::mInstance = nullptr;
 
 PursueService::PursueService()
 {
-	init();
-	steering->behaviours.push_back(wander);
 }
 
 PursueService* PursueService::Get()
@@ -509,7 +431,16 @@ PursueService* PursueService::Get()
 	return mInstance;
 }
 
-void PursueService::init()
+void PursueService::Destroy()
+{
+	if (mInstance != nullptr)
+	{
+		delete mInstance;
+		mInstance = nullptr;
+	}
+}
+
+void PursueService::Init()
 {
 	// Set up the steering behaviours (we use one for all)
 	wander = new Wander;
@@ -519,6 +450,7 @@ void PursueService::init()
 
 	steering = new PrioritySteering();
 	steering->epsilon = 0.01f;
+	steering->behaviours.push_back(wander);
 }
 
 PursueService::~PursueService()
@@ -533,61 +465,89 @@ PursueService::~PursueService()
 	steering->behaviours.clear();
 }
 
-void PursueService::update(float dt)
+void PursueService::Request(float dt, LevelService::Simulation& pursueAgent)
 {
 	SteeringOutput steer;
+	CCrowdManager belongTo;
 
-	for (std::list<LevelService::Simulation*>::iterator it = pursueAgents.begin(); it != pursueAgents.end(); ++it)
+	Kinematic kinematic(pursueAgent.position, pursueAgent.velocity);
+
+	wander->mCurrentTarget = PursueService::Get()->FindClosestYellowBall(pursueAgent.position);
+	g_pointDest.pos = wander->mCurrentTarget;
+	g_pointDest.color = D3DXVECTOR4(0.f, 1.f, 0.f, 1.f);
+	wander->setAccelaration(D3DXVec3Length(&(pursueAgent.acceleration)));
+
+	// Get the steering output
+	steering->mCharacter = &kinematic;
+	steering->getSteering(&steer);
+
+	// Update the kinematic
+	kinematic.integrate(steer, 0.7f, dt);
+	kinematic.setOrientationFromVelocity();
+
+	kinematic.trimMaxSpeed(20.f);
+
+	// Keep in bounds of the world
+	if (kinematic.position.x < -WORLD_SIZE)
 	{
-		Kinematic kinematic((*it)->position, (*it)->velocity);
-
-		wander->setAccelaration(D3DXVec3Length(&((*it)->acceleration)));
-
-		// Get the steering output
-		steering->mCharacter = &kinematic;
-		steering->getSteering(&steer);
-
-		// Update the kinematic
-		kinematic.integrate(steer, 0.7f, dt);
-		kinematic.setOrientationFromVelocity();
-
-		// Keep in bounds of the world
-		if (kinematic.position.x < -WORLD_SIZE)
-		{
-			kinematic.position.x = -WORLD_SIZE + 0.5f;
-			kinematic.velocity *= -1.f;
-		}
-		else if (kinematic.position.z < -WORLD_SIZE)
-		{
-			kinematic.position.z = -WORLD_SIZE + 0.5f;
-			kinematic.velocity *= -1.f;
-		}
-		else if (kinematic.position.x > WORLD_SIZE)
-		{
-			kinematic.position.x = WORLD_SIZE - 0.5f;
-			kinematic.velocity *= -1.f;
-		}
-		else if (kinematic.position.z > WORLD_SIZE)
-		{
-			kinematic.position.z = WORLD_SIZE - 0.5f;
-			kinematic.velocity *= -1.f;
-		}
-
-		kinematic.position.y = 0.5f;
-
-		(*it)->position = kinematic.position;
-		(*it)->velocity = kinematic.velocity;
+		kinematic.position.x = -WORLD_SIZE + 0.5f;
+		kinematic.velocity *= -1.f;
 	}
+	else if (kinematic.position.z < -WORLD_SIZE)
+	{
+		kinematic.position.z = -WORLD_SIZE + 0.5f;
+		kinematic.velocity *= -1.f;
+	}
+	else if (kinematic.position.x > WORLD_SIZE)
+	{
+		kinematic.position.x = WORLD_SIZE - 0.5f;
+		kinematic.velocity *= -1.f;
+	}
+	else if (kinematic.position.z > WORLD_SIZE)
+	{
+		kinematic.position.z = WORLD_SIZE - 0.5f;
+		kinematic.velocity *= -1.f;
+	}
+
+	kinematic.position.y = 0.5f;
+
+	pursueAgent.position = kinematic.position;
+	pursueAgent.velocity = kinematic.velocity;
+}
+
+D3DXVECTOR3 PursueService::FindClosestYellowBall(D3DXVECTOR3& pursuer, CCrowdManager** belongTo)
+{
+	D3DXVECTOR3 closest;
+	float distance = 9999999.f;
+	std::list<CCrowdManager*>& yellowBalls = LevelService::Get()->GetYellowBalls();
+	for (std::list<CCrowdManager*>::iterator it = yellowBalls.begin(); it != yellowBalls.end(); ++it)
+	{
+		for (std::list<Kinematic>::iterator kit = (*it)->GetKinematic().begin(); kit != (*it)->GetKinematic().end(); ++kit)
+		{
+			float dist = D3DXVec3Length(&(D3DXVECTOR3(pursuer - (*kit).position)));
+			if (dist < distance)
+			{
+				closest = (*kit).position;
+				if (belongTo != nullptr)
+				{
+					*belongTo = *it;
+				}
+				distance = dist;
+			}
+		}
+	}
+
+	return closest;
 }
 
 CCrowdManager::CCrowdManager()
 {
-	init();
+	Init();
 }
 
 CCrowdManager::CCrowdManager(std::vector<Sphere>& obstacles)
 {
-	init();
+	Init();
 	for (std::vector<Sphere>::iterator it = obstacles.begin(); it != obstacles.end(); ++it)
 	{
 		AvoidSphere* avoid = new AvoidSphere;
@@ -606,7 +566,7 @@ CCrowdManager::CCrowdManager(std::vector<Sphere>& obstacles)
 	
 }
 
-void CCrowdManager::init()
+void CCrowdManager::Init()
 {
 	// Set up the kinematics and all individual behaviours
 	for (int i = 0; i < BOIDS; i++)
@@ -617,14 +577,14 @@ void CCrowdManager::init()
 	}
 
 	// Set up the steering behaviours (we use one for all)
-	separation = new Separation2;
+	separation = new Separation;
 	separation->mMaxAcceleration = 5.f;
 	separation->mNeighbourhoodSize = 2.f;
 	separation->mTolerence = 3.f;
 	separation->mNeighbourhoodMinDP = -1.f;
 	separation->mFlock = &flock;
 
-	cohesion = new Cohesion2;
+	cohesion = new Cohesion;
 	cohesion->mMaxAcceleration = 10.f;
 	cohesion->mNeighbourhoodSize = 5.f;
 	cohesion->mTolerence = 5.f;
@@ -665,7 +625,7 @@ CCrowdManager::~CCrowdManager()
     if (var > WORLD_SIZE) var = -WORLD_SIZE;
 
 
-void CCrowdManager::update(float dt)
+void CCrowdManager::Update(float dt)
 {
 	SteeringOutput steer;
 	SteeringOutput temp;
@@ -675,13 +635,20 @@ void CCrowdManager::update(float dt)
 		Kinematic& kine = *it;
 		bool selfErased = false;
 
+		D3DXVECTOR3 characterToObstacle = wander->mCurrentTarget - kine.position;
+		if (D3DXVec3LengthSq(&characterToObstacle) < 1.f ||
+			(IsLesserOrEqualWithEpsilon(wander->mCurrentTarget.x, 0.f) && IsLesserOrEqualWithEpsilon(wander->mCurrentTarget.z, 0.f)))
+		{
+			wander->mCurrentTarget = DestinationManager::Get()->Query();
+		}
+
 		// Check red balls
 		for (std::list<LevelService::Simulation>::iterator rit = LevelService::Get()->ModifyRedBalls().begin(); rit != LevelService::Get()->ModifyRedBalls().end(); ++rit)
 		{
 			LevelService::Simulation& redball = *rit;
-			if (D3DXVec3Length(&D3DXVECTOR3(redball.position - kine.position)) < 0.6f)
+			if (D3DXVec3Length(&D3DXVECTOR3(redball.position - kine.position)) < 0.5f)
 			{
-				redball.AddFuel(0.01f);
+				redball.AddFuel(25.f);
 				it = kinematic.erase(it);
 				selfErased = true;
 			}
@@ -740,6 +707,17 @@ DestinationManager* DestinationManager::Get()
 		mInstance = new DestinationManager;
 	}
 	return mInstance;
+}
+
+void DestinationManager::Destroy()
+{
+	Get()->mReachableRangeX.clear();
+	Get()->mReachableRangeZ.clear();
+	if (mInstance != nullptr)
+	{
+		delete mInstance;
+		mInstance = nullptr;
+	}
 }
 
 void DestinationManager::Push(const SSkycraper& data)
@@ -814,6 +792,52 @@ LevelService* LevelService::Get()
 	return mInstance;
 }
 
+void LevelService::Destroy()
+{
+	Get()->mRedBalls.clear();
+	Get()->mYellowBalls.clear();
+	Get()->Clear(Get()->GetSkyperRoot());
+
+	if (mInstance != nullptr)
+	{
+		delete mInstance;
+		mInstance = nullptr;
+	}
+}
+
+void LevelService::Clear(SNode& node)
+{
+	if (node.leftLow)
+	{
+		Clear(*(node.leftLow));
+		delete node.leftLow;
+		node.leftLow = nullptr;
+	}
+
+	if (node.leftHigh)
+	{
+		Clear(*(node.leftHigh));
+		delete node.leftHigh;
+		node.leftHigh = nullptr;
+	}
+
+	if (node.rightLow)
+	{
+		Clear(*(node.rightLow));
+		delete node.rightLow;
+		node.rightLow = nullptr;
+	}
+
+	if (node.rightHigh)
+	{
+		Clear(*(node.rightHigh));
+		delete node.rightHigh;
+		node.rightHigh = nullptr;
+	}
+
+	node.data.clear();
+}
+
 void LevelService::Push(SSkycraper& data, SNode* node)
 {
 	if (node == nullptr)
@@ -886,14 +910,21 @@ void LevelService::Update(float dt)
 	for (std::list<Simulation>::iterator it = mRedBalls.begin(); it != mRedBalls.end(); )
 	{
 		Simulation& redBall = *it;
-		if (IsLesserOrEqualWithEpsilon(D3DXVec3LengthSq(&redBall.velocity), 0.00000001f))
+		if (IsLesserOrEqualWithEpsilon(D3DXVec3LengthSq(&redBall.acceleration), 0.00000001f))
 		{
+			CCrowdManager* belongTo = nullptr;
+			PursueService::Get()->FindClosestYellowBall(redBall.position, &belongTo);
+			if (belongTo != nullptr)
+			{
+				belongTo->AddMember(Kinematic(redBall.position, redBall.velocity));
+			}
+		
 			it = mRedBalls.erase(it);
 			continue;
 		}
 
-		if (redBall.position.x < -WORLD_SIZE || redBall.position.x > WORLD_SIZE
-			|| redBall.position.z > WORLD_SIZE || redBall.position.z < -WORLD_SIZE)
+		if (redBall.position.x < -1.5f * WORLD_SIZE || redBall.position.x > 1.5f * WORLD_SIZE
+			|| redBall.position.z > 1.5f * WORLD_SIZE || redBall.position.z < -1.5f * WORLD_SIZE)
 		{
 			it = mRedBalls.erase(it);
 			continue;
@@ -903,20 +934,21 @@ void LevelService::Update(float dt)
 
 		D3DXVECTOR3 normalized;
 		D3DXVec3Normalize(&normalized, &redBall.acceleration);
-		redBall.acceleration -= dt * normalized;
+		redBall.acceleration -= dt * redBall.acceleration;
+
 		if (IsLesserOrEqualWithEpsilon(redBall.position.y, 0.5f))
 		{
 			// landed on the ground
 			redBall.velocity.y = 0.f;
 			redBall.acceleration.y = 0.f;
-			PursueService::Get()->AddPursueAgent(&redBall);
+			PursueService::Get()->Request(dt, redBall);
 		}
 		else
 		{
 			redBall.velocity += redBall.acceleration * dt;
 			redBall.position += redBall.velocity * dt;
 		}
-
+		
 		std::vector<SSkycraper*> skycrapers;
 		GetNearestSkycraper(skycrapers, D3DXVECTOR3(redBall.position.x-4, redBall.position.y, redBall.position.z-4), 
 			D3DXVECTOR3(redBall.position.x + 4, redBall.position.y, redBall.position.z + 4), &mSkycraperRoot);

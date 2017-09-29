@@ -4,28 +4,24 @@
 #include <ctype.h>
 #include <chrono>
 #include <iostream>
-#include "CrowdManager.h"
-
-
-float PlacePosY(float height) { return height / 2.f + 0.1f; }
-
-Mesh*	g_sphere = 0;
-float	g_angle = 0.0f;
-Mesh*	g_unitBox = 0;
-CCrowdManager* g_crowdManager;
-
-CCrowdManager* g_crowdManagerB;
-std::vector<Sphere> g_obstacles;
-
-bool g_pause = true;
+#include "CPR_Utils.h"
 
 extern DebugPoint g_pointToAvoid;
 extern DebugPoint g_pointDest;
 extern bool IsLesserOrEqualWithEpsilon(float x, float y);
 
+Mesh*	g_sphere = 0;
+Mesh*	g_unitBox = 0;
+CCrowdManager* g_crowdManager;
+CCrowdManager* g_crowdManagerB;
+bool g_pause = true;
+bool g_drawDebug = false;
+std::vector<Sphere> g_obstacles;
 std::vector<SSkycraper> g_skycrapers;
-
 std::ofstream g_ofs;
+
+float PlacePosY(float height) { return height / 2.f + 0.1f; }
+
 
 struct CameraInfo
 {
@@ -146,7 +142,7 @@ void OnInit()
 
 	g_crowdManagerB = new CCrowdManager(g_obstacles);
 	int increment = 0;
-	for (std::list<Kinematic>::iterator it = g_crowdManagerB->getKinematic().begin(); it != g_crowdManagerB->getKinematic().end(); ++it)
+	for (std::list<Kinematic>::iterator it = g_crowdManagerB->GetKinematic().begin(); it != g_crowdManagerB->GetKinematic().end(); ++it)
 	{
 		Kinematic& agent = *it;
 		agent.position.x = 10.f + (increment++);
@@ -157,7 +153,7 @@ void OnInit()
 	LevelService::Get()->GetYellowBalls().push_back(g_crowdManager);
 	LevelService::Get()->GetYellowBalls().push_back(g_crowdManagerB);
 
-	PursueService::Get()->init();
+	PursueService::Get()->Init();
 
 	g_ofs.open("fps.txt", std::ofstream::out | std::ofstream::trunc);
 }
@@ -169,8 +165,18 @@ void OnShutdown()
 	g_crowdManager = nullptr;
 	delete g_crowdManagerB;
 	g_crowdManagerB = nullptr;
-	g_obstacles.clear();
 
+	g_obstacles.clear();
+	g_skycrapers.clear();
+
+	PursueService::Destroy();
+	LevelService::Destroy();
+	DestinationManager::Destroy();
+
+	delete g_sphere;
+	g_sphere = nullptr;
+	delete g_unitBox;
+	g_unitBox = nullptr;
 	g_ofs.close();
 }
 
@@ -188,9 +194,8 @@ void OnUpdate( float _deltaTime )
 
 	if (!g_pause)
 	{
-		g_crowdManager->update(_deltaTime);
-		g_crowdManagerB->update(_deltaTime);
-		PursueService::Get()->update(_deltaTime);
+		g_crowdManager->Update(_deltaTime);
+		g_crowdManagerB->Update(_deltaTime);
 	}
 	
 }
@@ -205,24 +210,18 @@ void OnRender()
 	RenderUI();
 	RenderBalls();
 	RenderRedBalls();
-
-// 	for (unsigned i = 0; i < OBSTACLES; i++)
-// 	{
-// 		g_sphere->Render(D3DXVECTOR3(g_obstacles[i].position.x, g_obstacles[i].position.y, g_obstacles[i].position.z), rot,
-// 			D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(1.0f, 0.f, 0.f, 1.0f));
-// 	}
-	
-	g_sphere->Render(g_pointToAvoid.pos, rot, D3DXVECTOR3(0.5f, 0.5f, 0.5f), g_pointToAvoid.color);
-
-	g_sphere->Render(g_crowdManager->getWander()->mWanderPoint.pos, rot, 
-		D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(1.f, 1.f, 1.f, 1.f));
-
-	g_sphere->Render(g_crowdManagerB->getWander()->mWanderPoint.pos, rot,
-		D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(0.5f, 0.5f, 0.5f, 1.f));
-	
-
 	// Render ground
-	g_unitBox->Render(D3DXVECTOR3(0.0f, 0.0f, 0.0f), rot, D3DXVECTOR3(50.0f, 0.1f, 50.0f), D3DXVECTOR4 (0.0f, 0.5f, 0.7f, 1.0f));
+	g_unitBox->Render(D3DXVECTOR3(0.0f, 0.0f, 0.0f), rot, D3DXVECTOR3(50.0f, 0.1f, 50.0f), D3DXVECTOR4(0.0f, 0.5f, 0.7f, 1.0f));
+
+	if (g_drawDebug)
+	{
+		g_sphere->Render(g_pointDest.pos, rot, D3DXVECTOR3(0.5f, 0.5f, 0.5f), g_pointDest.color);
+		g_sphere->Render(g_pointToAvoid.pos, rot, D3DXVECTOR3(0.5f, 0.5f, 0.5f), g_pointToAvoid.color);
+		g_sphere->Render(g_crowdManager->getWander()->mWanderPoint.pos, rot,
+			D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(1.f, 1.f, 1.f, 1.f));
+		g_sphere->Render(g_crowdManagerB->getWander()->mWanderPoint.pos, rot,
+			D3DXVECTOR3(1.f, 1.f, 1.f), D3DXVECTOR4(0.5f, 0.5f, 0.5f, 1.f));
+	}
 }
 
 void UpdateCamera(float _deltaTime)
@@ -273,7 +272,6 @@ void UpdateCamera(float _deltaTime)
 	D3DXVec3Cross(&g_camera.mRight, &g_camera.mUp, &g_camera.mLook);
 
 	// update camera
-	g_angle += _deltaTime;
 	Camera::LookAt(g_camera.mPosition, g_camera.mPosition + 10.f * g_camera.mLook);
 }
 
@@ -288,6 +286,12 @@ void UpdateRedBalls(float dt)
 		if (Mouse::LeftMouseButton())
 		{
 			LevelService::Get()->AddRedBall(g_camera.mPosition, 5.f*g_camera.mLook, 0.1f*g_camera.mLook, 0.2f);
+			start = std::chrono::steady_clock::now();
+		}
+
+		if (Mouse::RightMouseButton())
+		{
+			g_drawDebug = !g_drawDebug;
 			start = std::chrono::steady_clock::now();
 		}
 	}
@@ -308,13 +312,13 @@ void RenderUI()
 
 void RenderBalls()
 {
-	for (std::list<Kinematic>::iterator it = g_crowdManager->getKinematic().begin(); it != g_crowdManager->getKinematic().end(); ++it)
+	for (std::list<Kinematic>::iterator it = g_crowdManager->GetKinematic().begin(); it != g_crowdManager->GetKinematic().end(); ++it)
 	{
 		g_sphere->Render(D3DXVECTOR3((*it).position.x, (*it).position.y, (*it).position.z),
 			D3DXVECTOR3(0.f, (*it).orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f),
 			D3DXVECTOR4(1.0f, 1.0f, 0.0f, 1.0f));
 	}
-	for (std::list<Kinematic>::iterator it = g_crowdManagerB->getKinematic().begin(); it != g_crowdManagerB->getKinematic().end(); ++it)
+	for (std::list<Kinematic>::iterator it = g_crowdManagerB->GetKinematic().begin(); it != g_crowdManagerB->GetKinematic().end(); ++it)
 	{
 		g_sphere->Render(D3DXVECTOR3((*it).position.x, (*it).position.y, (*it).position.z),
 			D3DXVECTOR3(0.f, (*it).orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f),
