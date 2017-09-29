@@ -295,7 +295,7 @@ class Flock
 public:
 	std::list<Kinematic*> mBoids;
 	bool *mInNeighbourhood;
-	unsigned int mArraySize;
+	int mArraySize;
 
 	Flock();
 
@@ -487,7 +487,8 @@ public:
 class CCrowdManager
 {
 	/** Holds the kinematic of all the boids. */
-	Kinematic *kinematic;
+	//Kinematic *kinematic;
+	std::list<Kinematic> kinematic;
 
 	/** Holds the flock */
 	Flock flock;
@@ -532,24 +533,24 @@ private:
 	std::vector<float> mReachableRangeZ;
 };
 
-class CollisionService
+class LevelService
 {
 public:
 	struct SNode
 	{
-		SNode* lh;
-		SNode* rh;
-		SNode* ll;
-		SNode* rl;
+		SNode* leftHigh;
+		SNode* rightHigh;
+		SNode* leftLow;
+		SNode* rightLow;
 		D3DXVECTOR3 center;
 		D3DXVECTOR2 halfWidth;
 		std::vector<SSkycraper*> data;
 
 		SNode(D3DXVECTOR3 c, D3DXVECTOR2 hw)
-			: lh(nullptr)
-			, rh(nullptr)
-			, ll(nullptr)
-			, rl(nullptr)
+			: leftHigh(nullptr)
+			, rightHigh(nullptr)
+			, leftLow(nullptr)
+			, rightLow(nullptr)
 		{
 			center = c;
 			halfWidth = hw;
@@ -573,7 +574,7 @@ public:
 		}
 	};
 
-	static CollisionService* Get();
+	static LevelService* Get();
 
 	void Push(SSkycraper& data, SNode* node = nullptr);
 
@@ -581,20 +582,23 @@ public:
 
 	void Update(float dt);
 
-	const std::list<Simulation>& GetRedBalls() const { return mRedBall; };
+	const std::list<Simulation>& GetRedBalls() const { return mRedBalls; }
+
+	std::list<CCrowdManager*>& GetYellowBalls() { return mYellowBalls; }
 
 private:
-	CollisionService() : mRoot(D3DXVECTOR3(0.f, 0.f, 0.f), D3DXVECTOR2(WORLD_SIZE, WORLD_SIZE))
+	LevelService() : mSkycraperRoot(D3DXVECTOR3(0.f, 0.f, 0.f), D3DXVECTOR2(WORLD_SIZE, WORLD_SIZE))
 	{};
 
-	static CollisionService* mInstance;
+	static LevelService* mInstance;
 
-	SNode mRoot;
+	SNode mSkycraperRoot;
 
-	std::list<Simulation> mRedBall;
+	std::list<Simulation> mRedBalls;
+	std::list<CCrowdManager*> mYellowBalls;
 
 private:
-	std::vector<SSkycraper*>* GetNearestSkycraper(const Simulation& ball, SNode* node = nullptr);
+	void GetNearestSkycraper(std::vector<SSkycraper*>& skycrapers, D3DXVECTOR3& lowerBound, D3DXVECTOR3& upperBound, SNode* node);
 
 	bool InSkycraper(D3DXVECTOR3& pos, const SSkycraper* skycraper) const;
 };
