@@ -815,13 +815,7 @@ void CollisionService::Update(float dt)
 		ball.position += ball.velocity * dt;
 
 		int tryTimes = 0;
-		const std::vector<SSkycraper*>* skycrapers = nullptr;
-		do 
-		{
-			skycrapers = GetNearestSkycraper(ball);
-			tryTimes++;
-		}while((skycrapers == nullptr || skycrapers->size() == 0) && tryTimes<4)
-		
+		const std::vector<SSkycraper*>* skycrapers = GetNearestSkycraper(ball);
 		if (skycrapers == nullptr)
 		{
 			continue;
@@ -851,6 +845,82 @@ bool CollisionService::InSkycraper(D3DXVECTOR3& pos, const SSkycraper* skycraper
 		"]" << std::endl;
 	return (pos.x > skycraper->minBoundingBox.x && pos.x < skycraper->maxBoundingBox.x && pos.y > skycraper->minBoundingBox.y
 		&& pos.y < skycraper->maxBoundingBox.y && pos.z > skycraper->minBoundingBox.z && pos.z < skycraper->maxBoundingBox.z);
+}
+
+void CollisionService::GetNearestSkycraper(std::vector<SSkycraper*>& skycrapers, D3DXVECTOR3 lowerBound, D3DXVECTOR3 upperBound, SNode* node)
+{
+	if (node == nullptr)
+	{
+		return;
+	}
+
+	if (lowerBound.x < -WORLD_SIZE || upperBound.x > WORLD_SIZE
+		|| lowerBound.z < -WORLD_SIZE || upperBound.z > WORLD_SIZE
+		|| lowerBound.x >= upperBound.x || lowerBound.z >= upperBound.z )
+	{
+		return;
+	}
+
+	if (lowerBound.x <= node->center.x && upperBound.x <= node->center.x)
+	{
+		if (lowerBound.z <= node->center.z && upperBound.z <= node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->ll);
+		}
+		else if (lowerBound.z > node->center.z && upperBound.z > node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->lh);
+		}
+		else if (lowerBound.z <= node->center.z && upperBound.z > node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->ll);
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->lh);
+		}
+	}
+	else if (lowerBound.x <= node->center.x && upperBound.x > node->center.x)
+	{
+		if (lowerBound.z <= node->center.z && upperBound.z <= node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->ll);
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->rl);
+		}
+		else if (lowerBound.z > node->center.z && upperBound.z > node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->lh);
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->rh);
+		}
+		else if (lowerBound.z <= node->center.z && upperBound.z > node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->ll);
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->rl);
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->lh);
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->rh);
+
+			if (node->data != nullptr)
+			{
+				for (std::vector<SSkycraper*>::const_iterator it = node->data->begin(); it != node->data->end(); ++it)
+				{
+					skycrapers.push_back(*it);
+				}
+			}
+		}
+	}
+	else if (lowerBound.x > node->center.x && upperBound.x > node->center.x)
+	{
+		if (lowerBound.z <= node->center.z && upperBound.z <= node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->rl);
+		}
+		else if (lowerBound.z > node->center.z && upperBound.z > node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->rh);
+		}
+		else if (lowerBound.z <= node->center.z && upperBound.z > node->center.z)
+		{
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->rl);
+			GetNearestSkycraper(skycrapers, lowerBound, upperBound, node->rh);
+		}
+	}
 }
 
 std::vector<SSkycraper*>* CollisionService::GetNearestSkycraper(const Simulation& ball, SNode* node)
