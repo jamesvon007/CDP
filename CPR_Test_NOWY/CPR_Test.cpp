@@ -145,10 +145,11 @@ void OnInit()
 	g_crowdManager = new CCrowdManager(g_obstacles);
 
 	g_crowdManagerB = new CCrowdManager(g_obstacles);
-	for (int i = 0; i < BOIDS; i++)
+	int increment = 0;
+	for (std::list<Kinematic>::iterator it = g_crowdManagerB->getKinematic().begin(); it != g_crowdManagerB->getKinematic().end(); ++it)
 	{
-		Kinematic& agent = g_crowdManagerB->getKinematic()[i];
-		agent.position.x = 10.f + i;
+		Kinematic& agent = *it;
+		agent.position.x = 10.f + (increment++);
 		agent.position.y = 0.5f;
 		agent.position.z = 20.f;
 	}
@@ -304,18 +305,17 @@ void RenderUI()
 
 void RenderBalls()
 {
-	for (int i = 0; i < BOIDS; i++)
+	for (std::list<Kinematic>::iterator it = g_crowdManager->getKinematic().begin(); it != g_crowdManager->getKinematic().end(); ++it)
 	{
-		Kinematic agent = g_crowdManager->getKinematic()[i];
-		g_sphere->Render(D3DXVECTOR3(agent.position.x, agent.position.y, agent.position.z),
-			D3DXVECTOR3(0.f, agent.orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f), 
+		g_sphere->Render(D3DXVECTOR3((*it).position.x, (*it).position.y, (*it).position.z),
+			D3DXVECTOR3(0.f, (*it).orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f),
 			D3DXVECTOR4(1.0f, 1.0f, 0.0f, 1.0f));
-
-		agent = g_crowdManagerB->getKinematic()[i];
-		g_sphere->Render(D3DXVECTOR3(agent.position.x, agent.position.y, agent.position.z),
-			D3DXVECTOR3(0.f, agent.orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f), 
+	}
+	for (std::list<Kinematic>::iterator it = g_crowdManagerB->getKinematic().begin(); it != g_crowdManagerB->getKinematic().end(); ++it)
+	{
+		g_sphere->Render(D3DXVECTOR3((*it).position.x, (*it).position.y, (*it).position.z),
+			D3DXVECTOR3(0.f, (*it).orientation, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f),
 			D3DXVECTOR4(0.0f, 1.0f, 1.0f, 1.0f));
-
 	}
 }
 

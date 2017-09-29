@@ -135,7 +135,7 @@ Flock::Flock()
 {}
 
 int Flock::prepareNeighourhood(
-	const Kinematic* of,
+	const Kinematic* self,
 	float size,
 	float minDotProduct /* = -1.0 */)
 {
@@ -160,7 +160,7 @@ int Flock::prepareNeighourhood(
 	D3DXVECTOR3 look = D3DXVECTOR3(0.f, 0.f, 0.f);
 	if (minDotProduct > -1.0f)
 	{
-		look = of->getOrientationAsVector();
+		look = self->getOrientationAsVector();
 	}
 
 	Flock result;
@@ -168,19 +168,20 @@ int Flock::prepareNeighourhood(
 	int i = 0, count = 0;;
 	for (bi = mBoids.begin(); bi != mBoids.end(); bi++, i++)
 	{
-		Kinematic *k = *bi;
+		Kinematic* k = *bi;
 		mInNeighbourhood[i] = false;
 
 		// Ignore ourself
-		if (k == of) continue;
+		if (k == self)
+			continue;
 
 		// Check for maximum distance
-		if(D3DXVec3Length(&D3DXVECTOR3(k->position - of->position)) > size) continue;
+		if(D3DXVec3Length(&D3DXVECTOR3(k->position - self->position)) > size) continue;
 
 		// Check for angle
 		if (minDotProduct > -1.0)
 		{
-			D3DXVECTOR3 offset = k->position - of->position;
+			D3DXVECTOR3 offset = k->position - self->position;
 			D3DXVec3Normalize(&offset, &offset);
 			if (D3DXVec3Dot(&look, &offset)  < minDotProduct)
 			{
@@ -504,7 +505,6 @@ CCrowdManager::CCrowdManager(std::vector<Sphere>& obstacles)
 	{
 		AvoidSphere* avoid = new AvoidSphere;
 		avoid->obstacle = &(*it);
-		avoid->mCharacter = kinematic;
 		avoid->maxAcceleration = 30.f;
 		avoid->avoidMargin = 0.5f;
 		avoid->maxLookahead = 2.5f;
@@ -523,20 +523,11 @@ void CCrowdManager::init()
 {
 
 	// Set up the kinematics and all individual behaviours
-	kinematic = new Kinematic[BOIDS];
-
 	for (int i = 0; i < BOIDS; i++)
 	{
-		kinematic[i].position.x = 1.f + i;
-		kinematic[i].position.y = 0.5f;
-		kinematic[i].position.z = 20.f;
-		kinematic[i].orientation = M_PI / 4.f;
-		kinematic[i].velocity.x = 0.1f;
-		kinematic[i].velocity.y = 0.f;
-		kinematic[i].velocity.z = 0.1f;
-		kinematic[i].rotation = 0.f;
-
-		flock.mBoids.push_back(kinematic + i);
+		Kinematic kine(D3DXVECTOR3(1.f + i, 0.5f, 20.f), M_PI / 4.f, D3DXVECTOR3(0.1f, 0.f, 0.1f), 0.f);
+		kinematic.push_back(kine);
+		flock.mBoids.push_back(&kinematic.back());
 	}
 
 	// Set up the steering behaviours (we use one for all)
@@ -571,7 +562,7 @@ void CCrowdManager::init()
 
 CCrowdManager::~CCrowdManager()
 {
-	delete[] kinematic;
+	kinematic.clear();
 
 	for (std::vector<SteeringBehaviour*>::iterator it = steering->behaviours.begin(); it != steering->behaviours.end(); ++it)
 	{
@@ -593,42 +584,64 @@ void CCrowdManager::update(float dt)
 	SteeringOutput steer;
 	SteeringOutput temp;
 
-	for (int i = 0; i < BOIDS; i++)
+	for (std::list<Kinematic>::iterator it = kinematic.begin(); it != kinematic.end(); )
 	{
+		Kinematic& kine = *it;
+		bool selfErased = false;
+
+		// Check red balls
+		for (std::list<LevelService::Simulation>::iterator rit = LevelService::Get()->ModifyRedBalls().begin(); rit != LevelService::Get()->ModifyRedBalls().end(); ++rit)
+		{
+			LevelService::Simulation& redball = *rit;
+			if (D3DXVec3Length(&D3DXVECTOR3(redball.position - kine.position)) < 0.6f)
+			{
+				redball.AddFuel(0.01f);
+				it = kinematic.erase(it);
+				selfErased = true;
+			}
+		}
+
+		if (selfErased)
+		{
+			continue;
+		}
+
 		// Get the steering output
-		steering->mCharacter = kinematic + i;
+		steering->mCharacter = &kine;
 		steering->getSteering(&steer);
 
 		// Update the kinematic
-		kinematic[i].integrate(steer, 0.7f, dt);
-		kinematic[i].setOrientationFromVelocity();
+		kine.integrate(steer, 0.7f, dt);
+		kine.setOrientationFromVelocity();
 
 		// Check for maximum speed
-		kinematic[i].trimMaxSpeed(20.f);
+		kine.trimMaxSpeed(20.f);
 
 		// Keep in bounds of the world
-		if (kinematic[i].position.x < -WORLD_SIZE)
+		if (kine.position.x < -WORLD_SIZE)
 		{
-			kinematic[i].position.x = -WORLD_SIZE + 0.5f;
-			kinematic[i].velocity *= -1.f;
+			kine.position.x = -WORLD_SIZE + 0.5f;
+			kine.velocity *= -1.f;
 		}
-		else if (kinematic[i].position.z < -WORLD_SIZE)
+		else if (kine.position.z < -WORLD_SIZE)
 		{
-			kinematic[i].position.z = -WORLD_SIZE + 0.5f;
-			kinematic[i].velocity *= -1.f;
+			kine.position.z = -WORLD_SIZE + 0.5f;
+			kine.velocity *= -1.f;
 		}
-		else if (kinematic[i].position.x > WORLD_SIZE)
+		else if (kine.position.x > WORLD_SIZE)
 		{
-			kinematic[i].position.x = WORLD_SIZE - 0.5f;
-			kinematic[i].velocity *= -1.f;
+			kine.position.x = WORLD_SIZE - 0.5f;
+			kine.velocity *= -1.f;
 		}
-		else if (kinematic[i].position.z > WORLD_SIZE)
+		else if (kine.position.z > WORLD_SIZE)
 		{
-			kinematic[i].position.z = WORLD_SIZE - 0.5f;
-			kinematic[i].velocity *= -1.f;
+			kine.position.z = WORLD_SIZE - 0.5f;
+			kine.velocity *= -1.f;
 		}
 
-		kinematic[i].position.y = 0.5f;
+		kine.position.y = 0.5f;
+
+		++it;
 	}
 }
 

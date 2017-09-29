@@ -282,7 +282,7 @@ struct Kinematic : public Location
 class SteeringBehaviour
 {
 public:
-	Kinematic *mCharacter;
+	Kinematic* mCharacter;
 
 	virtual void getSteering(SteeringOutput* output) = 0;
 };
@@ -303,7 +303,7 @@ public:
 	* Sets up the boolean flags of boids in the neighbourhood of the given boid.
 	*/
 	int prepareNeighourhood(
-		const Kinematic* of,
+		const Kinematic* self,
 		float size,
 		float minDotProduct = -1.f
 	);
@@ -512,7 +512,7 @@ public:
 
 	void update(float dt);
 
-	Kinematic* getKinematic() const { return kinematic; }
+	std::list<Kinematic>& getKinematic() { return kinematic; }
 };
 
 class DestinationManager
@@ -569,8 +569,11 @@ public:
 			, velocity(vel)
 			, acceleration(accel)
 			, radius(r)
-		{
+		{}
 
+		void AddFuel(float fuel)
+		{
+			acceleration += fuel * acceleration;
 		}
 	};
 
@@ -583,6 +586,7 @@ public:
 	void Update(float dt);
 
 	const std::list<Simulation>& GetRedBalls() const { return mRedBalls; }
+	std::list<Simulation>& ModifyRedBalls() { return mRedBalls; }
 
 	std::list<CCrowdManager*>& GetYellowBalls() { return mYellowBalls; }
 
