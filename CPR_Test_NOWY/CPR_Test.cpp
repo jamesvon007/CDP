@@ -138,14 +138,14 @@ void OnInit()
 		g_obstacles.push_back(Sphere(M_HALFSQRT2*(*it).scale, D3DXVECTOR3((*it).position.x, 0.5f, (*it).position.z)));
 		DestinationManager::Get()->Push(*it);
 
-		CollisionService::Get()->Push(*it);
+		LevelService::Get()->Push(*it);
 	}
 
 	DestinationManager::Get()->Finalize(D3DXVECTOR2(-WORLD_SIZE, WORLD_SIZE), D3DXVECTOR2(-WORLD_SIZE, WORLD_SIZE));
 	g_crowdManager = new CCrowdManager(g_obstacles);
 
 	g_crowdManagerB = new CCrowdManager(g_obstacles);
-	for (unsigned i = 0; i < BOIDS; i++)
+	for (int i = 0; i < BOIDS; i++)
 	{
 		Kinematic& agent = g_crowdManagerB->getKinematic()[i];
 		agent.position.x = 10.f + i;
@@ -153,8 +153,10 @@ void OnInit()
 		agent.position.z = 20.f;
 	}
 
+	LevelService::Get()->GetYellowBalls().push_back(g_crowdManager);
+	LevelService::Get()->GetYellowBalls().push_back(g_crowdManagerB);
+
 	g_ofs.open("fps.txt", std::ofstream::out | std::ofstream::trunc);
-	g_ofs << "display:" << std::endl;
 }
 
 //----------------------------------------------------------------------------
@@ -281,13 +283,12 @@ void UpdateRedBalls(float dt)
 	{
 		if (Mouse::LeftMouseButton())
 		{
-			CollisionService::Get()->AddRedBall(g_camera.mPosition, 5.f*g_camera.mLook, 0.001f*g_camera.mLook, 0.2f);
+			LevelService::Get()->AddRedBall(g_camera.mPosition, 5.f*g_camera.mLook, 0.1f*g_camera.mLook, 0.2f);
 			start = std::chrono::steady_clock::now();
 		}
 	}
 
-
-	CollisionService::Get()->Update(dt);
+	LevelService::Get()->Update(dt);
 	end = std::chrono::steady_clock::now();
 }
 
@@ -303,7 +304,7 @@ void RenderUI()
 
 void RenderBalls()
 {
-	for (unsigned i = 0; i < BOIDS; i++) 
+	for (int i = 0; i < BOIDS; i++)
 	{
 		Kinematic agent = g_crowdManager->getKinematic()[i];
 		g_sphere->Render(D3DXVECTOR3(agent.position.x, agent.position.y, agent.position.z),
@@ -320,7 +321,7 @@ void RenderBalls()
 
 void RenderRedBalls()
 {
-	for (std::list<CollisionService::Simulation>::const_iterator it = CollisionService::Get()->GetRedBalls().begin(); it != CollisionService::Get()->GetRedBalls().end(); ++it)
+	for (std::list<LevelService::Simulation>::const_iterator it = LevelService::Get()->GetRedBalls().begin(); it != LevelService::Get()->GetRedBalls().end(); ++it)
 	{
 		g_sphere->Render(D3DXVECTOR3((*it).position.x, (*it).position.y, (*it).position.z),
 			D3DXVECTOR3(0.f, 0.f, 0.f), D3DXVECTOR3(0.2f, 0.2f, 0.2f), D3DXVECTOR4(1.0f, 0.0f, 0.0f, 1.0f));
@@ -418,7 +419,7 @@ void CalculateFrameStats()
 	{
 		float fps = (float)frameCnt; // fps = frameCnt / 1
 		
-		//g_ofs << "FPS: " << fps << std::endl;
+		g_ofs << "FPS: " << fps << std::endl;
 
 		// Reset for next average.
 		frameCnt = 0;
