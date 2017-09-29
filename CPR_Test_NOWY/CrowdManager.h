@@ -285,6 +285,13 @@ public:
 	Kinematic* mCharacter;
 
 	virtual void getSteering(SteeringOutput* output) = 0;
+
+	void setAccelaration(float accel) { maxAcceleration = accel; }
+
+	float getAccelaration() { return maxAcceleration; }
+
+private:
+	float maxAcceleration;
 };
 
 /**
@@ -333,8 +340,6 @@ class Seek : public SteeringBehaviour
 {
 public:
 	const D3DXVECTOR3 *target;
-
-	float maxAcceleration;
 
 	virtual void getSteering(SteeringOutput* output);
 };
@@ -486,6 +491,7 @@ public:
 
 class CCrowdManager
 {
+private:
 	/** Holds the kinematic of all the boids. */
 	//Kinematic *kinematic;
 	std::list<Kinematic> kinematic;
@@ -493,6 +499,7 @@ class CCrowdManager
 	/** Holds the flock */
 	Flock flock;
 
+public:
 	/** Holds the steering behaviours. */
 	Separation2 *separation;
 	Cohesion2 *cohesion;
@@ -605,4 +612,32 @@ private:
 	void GetNearestSkycraper(std::vector<SSkycraper*>& skycrapers, D3DXVECTOR3& lowerBound, D3DXVECTOR3& upperBound, SNode* node);
 
 	bool InSkycraper(D3DXVECTOR3& pos, const SSkycraper* skycraper) const;
+};
+
+class PursueService
+{
+private:
+	std::list<LevelService::Simulation*> pursueAgents;
+public:
+	Wander *wander;
+	PrioritySteering *steering;
+
+public:
+	PursueService();
+	virtual ~PursueService();
+
+	static PursueService* Get();
+
+	Wander* getWander() const { assert(wander != nullptr); return wander; }
+
+	void init();
+
+	void update(float dt);
+
+	std::list<LevelService::Simulation*>& getPursueAgents() { return pursueAgents; }
+
+	void AddPursueAgent(LevelService::Simulation* agent) { pursueAgents.push_back(agent); }
+
+private:
+	static PursueService* mInstance;
 };
