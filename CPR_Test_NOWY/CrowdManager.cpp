@@ -244,7 +244,7 @@ void Seek::getSteering(SteeringOutput* output)
 	if (D3DXVec3LengthSq(&output->linear) > 0)
 	{
 		D3DXVec3Normalize(&output->linear, &output->linear);
-		output->linear *= maxAcceleration;
+		output->linear *= getAccelaration();
 	}
 }
 
@@ -258,7 +258,7 @@ void Flee::getSteering(SteeringOutput* output)
 	if (D3DXVec3LengthSq(&output->linear) > 0)
 	{
 		D3DXVec3Normalize(&output->linear, &output->linear);
-		output->linear *= maxAcceleration;
+		output->linear *= getAccelaration();
 	}
 }
 
@@ -273,7 +273,7 @@ void Separation::getSteering(SteeringOutput* output)
 	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
 
 	// Steer away from it.
-	flee.maxAcceleration = mMaxAcceleration;
+	flee.setAccelaration(mMaxAcceleration);
 	flee.mCharacter = mCharacter;
 	flee.target = &cofm;
 	
@@ -291,7 +291,7 @@ void Separation2::getSteering(SteeringOutput* output)
 	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
 
 	// Steer away from it.
-	flee.maxAcceleration = mMaxAcceleration;
+	flee.setAccelaration(mMaxAcceleration);
 	flee.mCharacter = mCharacter;
 	flee.target = &cofm;
 
@@ -312,7 +312,7 @@ void Cohesion::getSteering(SteeringOutput* output)
 	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
 
 	// Steer away from it.
-	seek.maxAcceleration = mMaxAcceleration;
+	seek.setAccelaration(mMaxAcceleration);
 	seek.mCharacter = mCharacter;
 	seek.target = &cofm;
 	g_pointToAvoid.pos = cofm;
@@ -323,7 +323,6 @@ void Cohesion2::getSteering(SteeringOutput* output)
 {
 	// Get the neighbourhood of boids
 	int count = mFlock->prepareNeighourhood(mCharacter, 1000.f, -1);
-	assert(count == BOIDS - 1);
 
 	// Work out their center of mass
 	D3DXVECTOR3 cofm = mFlock->getNeighbourhoodCenter();
@@ -331,7 +330,7 @@ void Cohesion2::getSteering(SteeringOutput* output)
 	if (D3DXVec3LengthSq(&centerToChar) > mTolerence*mTolerence)
 	{
 		// Steer away from it.
-		seek.maxAcceleration = mMaxAcceleration;
+		seek.setAccelaration(mMaxAcceleration);
 		seek.mCharacter = mCharacter;
 		seek.target = &cofm;
 		g_pointToAvoid.pos = cofm;
@@ -493,6 +492,94 @@ void Wander::getSteering(SteeringOutput* output)
 	Seek::getSteering(output);
 }
 
+PursueService* PursueService::mInstance = nullptr;
+
+PursueService::PursueService()
+{
+	init();
+	steering->behaviours.push_back(wander);
+}
+
+PursueService* PursueService::Get()
+{
+	if (mInstance == nullptr)
+	{
+		mInstance = new PursueService;
+	}
+	return mInstance;
+}
+
+void PursueService::init()
+{
+	// Set up the steering behaviours (we use one for all)
+	wander = new Wander;
+	wander->setAccelaration(15.f);
+	wander->mCurrentTarget = D3DXVECTOR3(0.f, 0.5f, 0.f);
+	wander->mFlock = nullptr;
+
+	steering = new PrioritySteering();
+	steering->epsilon = 0.01f;
+}
+
+PursueService::~PursueService()
+{
+	for (std::vector<SteeringBehaviour*>::iterator it = steering->behaviours.begin(); it != steering->behaviours.end(); ++it)
+	{
+		if (*it != nullptr)
+		{
+			delete *it;
+		}
+	}
+	steering->behaviours.clear();
+}
+
+void PursueService::update(float dt)
+{
+	SteeringOutput steer;
+
+	for (std::list<LevelService::Simulation*>::iterator it = pursueAgents.begin(); it != pursueAgents.end(); ++it)
+	{
+		Kinematic kinematic((*it)->position, (*it)->velocity);
+
+		wander->setAccelaration(D3DXVec3Length(&((*it)->acceleration)));
+
+		// Get the steering output
+		steering->mCharacter = &kinematic;
+		steering->getSteering(&steer);
+
+		// Update the kinematic
+		kinematic.integrate(steer, 0.7f, dt);
+		kinematic.setOrientationFromVelocity();
+
+		// Keep in bounds of the world
+		if (kinematic.position.x < -WORLD_SIZE)
+		{
+			kinematic.position.x = -WORLD_SIZE + 0.5f;
+			kinematic.velocity *= -1.f;
+		}
+		else if (kinematic.position.z < -WORLD_SIZE)
+		{
+			kinematic.position.z = -WORLD_SIZE + 0.5f;
+			kinematic.velocity *= -1.f;
+		}
+		else if (kinematic.position.x > WORLD_SIZE)
+		{
+			kinematic.position.x = WORLD_SIZE - 0.5f;
+			kinematic.velocity *= -1.f;
+		}
+		else if (kinematic.position.z > WORLD_SIZE)
+		{
+			kinematic.position.z = WORLD_SIZE - 0.5f;
+			kinematic.velocity *= -1.f;
+		}
+
+		kinematic.position.y = 0.5f;
+
+		(*it)->position = kinematic.position;
+		(*it)->velocity = kinematic.velocity;
+	}
+}
+
 CCrowdManager::CCrowdManager()
 {
 	init();
@@ -505,7 +592,7 @@ CCrowdManager::CCrowdManager(std::vector<Sphere>& obstacles)
 	{
 		AvoidSphere* avoid = new AvoidSphere;
 		avoid->obstacle = &(*it);
-		avoid->maxAcceleration = 30.f;
+		avoid->setAccelaration(30.f);
 		avoid->avoidMargin = 0.5f;
 		avoid->maxLookahead = 2.5f;
 		steering->behaviours.push_back(avoid);
@@ -521,7 +608,6 @@ CCrowdManager::CCrowdManager(std::vector<Sphere>& obstacles)
 
 void CCrowdManager::init()
 {
-
 	// Set up the kinematics and all individual behaviours
 	for (int i = 0; i < BOIDS; i++)
 	{
@@ -552,9 +638,9 @@ void CCrowdManager::init()
 	vMA->mFlock = &flock;
 
 	wander = new Wander;
-	wander->maxAcceleration = 15.f;
+	wander->setAccelaration(15.f);
 	wander->mCurrentTarget = D3DXVECTOR3(0.f, 0.5f, 0.f);
-	vMA->mFlock = &flock;
+	wander->mFlock = &flock;
 
 	steering = new PrioritySteering();
 	steering->epsilon = 0.01f;
@@ -815,11 +901,21 @@ void LevelService::Update(float dt)
 
 		++it;
 
-		D3DXVECTOR3 normal;
-		D3DXVec3Normalize(&normal, &redBall.acceleration);
-		redBall.acceleration -= dt * normal;
-		redBall.velocity += redBall.acceleration * dt;
-		redBall.position += redBall.velocity * dt;
+		D3DXVECTOR3 normalized;
+		D3DXVec3Normalize(&normalized, &redBall.acceleration);
+		redBall.acceleration -= dt * normalized;
+		if (IsLesserOrEqualWithEpsilon(redBall.position.y, 0.5f))
+		{
+			// landed on the ground
+			redBall.velocity.y = 0.f;
+			redBall.acceleration.y = 0.f;
+			PursueService::Get()->AddPursueAgent(&redBall);
+		}
+		else
+		{
+			redBall.velocity += redBall.acceleration * dt;
+			redBall.position += redBall.velocity * dt;
+		}
 
 		std::vector<SSkycraper*> skycrapers;
 		GetNearestSkycraper(skycrapers, D3DXVECTOR3(redBall.position.x-4, redBall.position.y, redBall.position.z-4), 
