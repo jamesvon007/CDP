@@ -157,6 +157,8 @@ void OnInit()
 	LevelService::Get()->GetYellowBalls().push_back(g_crowdManager);
 	LevelService::Get()->GetYellowBalls().push_back(g_crowdManagerB);
 
+	PursueService::Get()->init();
+
 	g_ofs.open("fps.txt", std::ofstream::out | std::ofstream::trunc);
 }
 
@@ -188,6 +190,7 @@ void OnUpdate( float _deltaTime )
 	{
 		g_crowdManager->update(_deltaTime);
 		g_crowdManagerB->update(_deltaTime);
+		PursueService::Get()->update(_deltaTime);
 	}
 	
 }
